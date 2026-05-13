@@ -26,7 +26,6 @@ class ModelIsotherm:
     rmse: float | None = None
     model: str | None = None
 
-
     def __new__(cls, model: str = '', *args, **kwargs):
         """docstring"""
         if cls is ModelIsotherm:
