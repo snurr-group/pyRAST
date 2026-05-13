@@ -1,0 +1,237 @@
+"""
+functions of model isotherm parent class go here
+
+"""
+# ruff: noqa: TC002
+
+import numpy as np
+import pandas as pd
+import scipy.optimize
+
+
+class ModelIsotherm:
+    # Model list built at import time
+    _MODELS = {}
+
+    # Class variables
+    name: str = ''
+    param_names: tuple
+    param_default_bounds: tuple
+
+    # Instance variables
+    df: pd.DataFrame
+    loading_key: str
+    pressure_key: str
+    model_parameters: dict
+    rmse: float | None = None
+    model: str | None = None
+
+
+    def __new__(cls, model: str = '', *args, **kwargs):
+        """docstring"""
+        if cls is ModelIsotherm:
+            if model not in cls._MODELS:
+                raise ValueError(f'{model} is not a valid model. Choose from'
+                                 f' {list(cls._MODELS.keys())}')
+            subclass = cls._MODELS[model]
+            return super().__new__(subclass)
+        return super().__new__(cls)
+
+    def __init_subclass__(cls, model_name: str = '', *args, **kwargs):
+        """docstring"""
+        super().__init_subclass__(**kwargs)
+        if model_name:
+            ModelIsotherm._MODELS[model_name] = cls
+
+    def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str,
+                 model: str, model_parameters: dict | None = None,
+                 param_guess: dict | None = None,
+                 param_bounds: dict | None = None,
+                 optimization_options: dict | None = None,
+                 optimization_mode: str = 'default'):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+
+        # Check for valid inputs
+        if loading_key not in df.columns:
+            raise ValueError(f'Loading key {loading_key} not found.')
+        if pressure_key not in df.columns:
+            raise ValueError(f'Pressure key {pressure_key} not found.')
+
+        # if model not in self.name:
+        #     raise ValueError(f'{model} is not a valid model.')
+
+        # Store dataframe and keys
+        self.df = df
+        self.loading_key = loading_key
+        self.pressure_key = pressure_key
+
+        # Store model parameters
+        self.model = model
+
+        # Set initial guess
+        # If user provided, check that keys are correct and enforce bounds
+        self.param_guess = self.initial_guess()
+        if param_guess is not None:
+            if set(param_guess.keys()) != set(self.param_names):
+                raise ValueError(f'param_guess keys must be {self.param_names}.')
+            self.param_guess = param_guess
+
+        # Set parameter bounds
+        self.param_bounds = dict(zip(self.param_names, self.param_default_bounds))
+        if param_bounds is not None:
+            if set(param_bounds.keys()) != set(self.param_names):
+                raise ValueError(f'param_bounds keys must be {self.param_names}.')
+            self.param_bounds = param_bounds
+
+        self.param_guess = self.enforce_parameter_bounds(self.param_guess)
+
+        # Fit model to data
+        # If user provided parameters, check that keys are correct
+        if model_parameters is not None:
+            if set(model_parameters.keys()) != set(self.param_names):
+                raise ValueError(f'model_parameters keys must be {self.param_names}.')
+            self.model_parameters = model_parameters
+        else:
+            self.model_parameters = dict.fromkeys(self.param_names, np.nan)
+            self._fit(optimization_options, optimization_mode)
+
+    def __repr__(self):
+        return (f'{self.name} Isotherm with parameters: {self.model_parameters}'
+                f' and guess: {self.param_guess} and RMSE: {self.rmse}')
+
+    def loading(self, pressure):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+        raise NotImplementedError('loading method not implemented for this model.')
+
+    def spreading_pressure(self, pressure):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+        raise NotImplementedError('spreading_pressure method not implemented.')
+
+    def initial_guess(self):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+        loading = self.df[self.loading_key].to_numpy()
+        pressure = self.df[self.pressure_key].to_numpy()
+
+        # Remove any rows with negative loading or pressure
+        mask = (loading >= 0) & (pressure >= 0)
+        loading = loading[mask]
+        pressure = pressure[mask]
+
+        # Guess saturation loading as 10% above max loading
+        m_guess = 1.1 * np.max(loading)
+        # Guess K from starting point
+        k_guess = loading[0] / pressure[0] / (m_guess - loading[0])
+        return {'M': m_guess, 'K': k_guess}
+
+    def enforce_parameter_bounds(self, guess):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+        for param, value in guess.items():
+            bounds = self.param_bounds[param]
+            if value < bounds[0]:
+                guess[param] = bounds[0]
+            elif value > bounds[1]:
+                guess[param] = bounds[1]
+        return guess
+
+    def _fit(self, optimization_options: dict | None = None,
+             optimization_mode: str = 'default'):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+        loading = self.df[self.loading_key].to_numpy()
+        pressure = self.df[self.pressure_key].to_numpy()
+
+        # Remove any rows with negative loading or pressure
+        mask = (loading >= 0) & (pressure >= 0)
+        loading = loading[mask]
+        pressure = pressure[mask]
+
+        guess = np.array(list(self.param_guess.values()))
+        bounds = [[self.param_bounds[param][0] for param in self.param_names],
+                  [self.param_bounds[param][1] for param in self.param_names]]
+        def residuals(params_):
+            # change params to those in x
+            for i in range(len(self.param_names)):
+                self.model_parameters[self.param_names[i]] = params_[i]
+
+            return loading - self.loading(pressure)
+
+        # Build dictionary of inputs to curve fitting
+        fitting_inputs = {
+            'fun': residuals,
+            'x0': guess,
+            'bounds': bounds,
+        }
+
+        # Update inputs based on optimization mode
+        if optimization_mode == 'enhanced':
+            enhanced_options = {
+                'max_nfev': 2000,
+            }
+            fitting_inputs.update(enhanced_options)
+
+        # Update if user provided optimization options
+        if optimization_options is not None:
+            fitting_inputs.update(optimization_options)
+
+        # Perform fitting
+        try:
+            result = scipy.optimize.least_squares(**fitting_inputs)
+        except ValueError as e:
+            raise ValueError(f'Fitting failed with error: {e}')
+
+        if not result.success:
+            print(f'Attempted fitting with guess: {self.param_guess}'
+                  f' and bounds: {bounds}')
+            raise RuntimeError(f'Fitting failed with message: {result.message}'
+                               f' Try providing a different initial guess or bounds.')
+
+        # Store results
+        self.model_parameters = dict(zip(self.param_names, result.x))
+        self.rmse = np.sqrt(np.mean(result.fun**2))

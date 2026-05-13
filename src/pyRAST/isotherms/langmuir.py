@@ -1,0 +1,26 @@
+"""
+
+"""
+
+import numpy as np
+
+from pyrast.isotherms.model_isotherm import ModelIsotherm
+
+
+class Langmuir(ModelIsotherm, model_name='Langmuir'):
+
+    # Class variables for every instance
+    name = 'Langmuir'
+    param_names = ('M', 'K')
+    param_default_bounds = ((0., np.inf), (0., np.inf))
+
+    def loading(self, pressure: float):
+        return self.model_parameters['M'] * self.model_parameters['K'] * pressure / \
+                (1.0 + self.model_parameters['K'] * pressure)
+
+    def spreading_pressure(self, pressure: float):
+        return (self.model_parameters["M"] *
+                np.log(1.0 + self.model_parameters["K"] * pressure))
+
+    def initial_guess(self):
+        return super().initial_guess()
