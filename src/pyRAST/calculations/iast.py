@@ -1,13 +1,10 @@
 """
 IAST calculation module
 """
-# ruff: noqa: F401
 from textwrap import dedent
 
 import numpy as np
 import scipy.optimize
-
-from pyrast.isotherms.model_isotherm import ModelIsotherm
 
 
 def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
@@ -20,12 +17,12 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
 
     # Validate inputs
     if n_components <= 1:
-        raise ValueError("At least two isotherms are required for IAST calculations.")
+        raise ValueError('At least two isotherms are required for IAST calculations.')
     if len(partial_pressures) != n_components:
-        raise ValueError("Length of partial_pressures must match number of isotherms.")
+        raise ValueError('Length of partial_pressures must match number of isotherms.')
 
     if verbose:
-        print(f"Performing IAST calculation for {n_components} components.")
+        print(f'Performing IAST calculation for {n_components} components.')
         for i in range(n_components):
             print(f'Component {i}: Partial Pressure = {partial_pressures[i]},'
                   f' Isotherm Model = {type(isotherms[i]).__name__}')
@@ -100,12 +97,12 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
     if verbose:
         # print IAST loadings and corresponding pure-component loadings
         for i in range(n_components):
-            print("Component ", i)
-            print("\tp = ", partial_pressures[i])
-            print("\tp^0 = ", pressure0[i])
-            print("\tLoading: ", loadings[i])
-            print("\tx = ", adsorbed_mole_fractions[i])
-            print("\tSpreading pressure = ",
+            print('Component ', i)
+            print('\tp = ', partial_pressures[i])
+            print('\tp^0 = ', pressure0[i])
+            print('\tLoading: ', loadings[i])
+            print('\tx = ', adsorbed_mole_fractions[i])
+            print('\tSpreading pressure = ',
                   isotherms[i].spreading_pressure(pressure0[i]))
 
     # print warning if had to extrapolate isotherm in spreading pressure
@@ -128,19 +125,19 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *, verbose=
     n_components = len(isotherms)
     adsorbed_mole_fractions = np.asarray(adsorbed_mole_fractions)
     if n_components <= 1:
-        raise ValueError("At least two isotherms are required for IAST calculations.")
+        raise ValueError('At least two isotherms are required for IAST calculations.')
 
     if np.size(adsorbed_mole_fractions) != n_components:
         print('''Example use:\n
               reverse_IAST([0.5,0.5], 1.0, [xe_isotherm, kr_isotherm],
-              verboseflag=true)''')
-        raise ValueError("Length of adsorbed_mole_fractions != number of isotherms.")
+              verbose=true)''')
+        raise ValueError('Length of adsorbed_mole_fractions != number of isotherms.')
 
     if np.sum(adsorbed_mole_fractions) != 1.0:
-        raise ValueError("Sum of adsorbed mole fractions must be 1.0")
+        raise ValueError('Sum of adsorbed mole fractions must be 1.0')
 
     if verbose:
-        print(f"Performing reverse IAST calculation for {n_components} components.")
+        print(f'Performing reverse IAST calculation for {n_components} components.')
         for i in range(n_components):
             print(f'Desired adsorbed mole fraction of component {i} = '
                   f'{adsorbed_mole_fractions[i]}')
@@ -213,15 +210,15 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *, verbose=
     if verbose:
         # print IAST loadings and corresponding pure-component loadings
         for i in range(n_components):
-            print("Component ", i)
-            print("\tDesired mole fraction in adsorbed phase, x = ", \
+            print('Component ', i)
+            print('\tDesired mole fraction in adsorbed phase, x = ', \
                 adsorbed_mole_fractions[i])
-            print("\tBulk gas mole fraction that gives this, y = ", \
+            print('\tBulk gas mole fraction that gives this, y = ', \
                 gas_mole_fractions[i])
-            print("\tSpreading pressure = ", \
+            print('\tSpreading pressure = ', \
                 isotherms[i].spreading_pressure(pressure0[i]))
-            print("\tp^0 = ", pressure0[i])
-            print("\tLoading: ", loadings[i])
+            print('\tp^0 = ', pressure0[i])
+            print('\tLoading: ', loadings[i])
 
     # print warning if had to extrapolate isotherm in spreading pressure
     if not warningoff:

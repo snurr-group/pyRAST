@@ -1,12 +1,16 @@
+# ruff: noqa: BLE001
 """
 functions of model isotherm parent class go here
 
 """
+
 from textwrap import dedent
 
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
+
+from pyrast.isotherms.model_isotherm import ModelIsotherm
 
 
 class InterpolatorIsotherm:
@@ -17,9 +21,11 @@ class InterpolatorIsotherm:
     pressure_key: str
     interp1d: interp1d
     fill_value: float | None = None
+    extrap_method: str | None = None
+    extrap_isotherm: ModelIsotherm | None = None
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str,
-                 fill_value=None):
+                 fill_value=None, extrap_method: str | None = None, **fit_options):
         """docstring"""
 
         # If pressure = 0 not in data frame, add it for interpolation purposes
@@ -35,6 +41,36 @@ class InterpolatorIsotherm:
         self.pressure_key = pressure_key
 
         if fill_value is None:
+            # If no fill value is provided, check for extrapolation method
+            if extrap_method == 'linear' and extrap_method is not None:
+                self.extrap_method = 'linear'
+                high_p = 10e20
+                final_load = self.df[self.loading_key].values[-1]
+                final_pressure = self.df[self.pressure_key].values[-1]
+                second_to_last_load = self.df[self.loading_key].values[-2]
+                second_to_last_pressure = self.df[self.pressure_key].values[-2]
+                slope = ((final_load - second_to_last_load) /
+                         (final_pressure - second_to_last_pressure))
+                next_point = final_load + slope * (high_p - final_pressure)
+                new_row = pd.DataFrame({self.pressure_key: [high_p],
+                                        self.loading_key: [next_point]})
+                self.df = pd.concat([self.df, new_row], ignore_index=True)
+
+            elif extrap_method in ModelIsotherm._MODELS and extrap_method is not None:
+                self.extrap_method = extrap_method
+                try:
+                    self.extrap_isotherm = ModelIsotherm(df=df.iloc[1:],
+                                                         loading_key=loading_key,
+                                                         pressure_key=pressure_key,
+                                                         model=extrap_method,
+                                                         **fit_options)
+                except Exception as e:
+                    print(dedent(f'''
+                    The extrapolation failed when fitting the {extrap_method} model.
+                    The error message from the fitting procedure is: {e}'''))
+                    print('The extrapolation method will be set to None')
+                    self.extrap_method = None
+
             self.interp1d = interp1d(self.df[pressure_key], self.df[loading_key])
         else:
             self.interp1d = interp1d(self.df[pressure_key], self.df[loading_key],
@@ -43,13 +79,19 @@ class InterpolatorIsotherm:
 
     def loading(self, pressure: float):
         """docstring"""
+
+        if ((self.fill_value is None) and (self.extrap_method is not None)
+            and (pressure > self.df[self.pressure_key].max())):
+            return self.extrap_isotherm.loading(pressure) # type: ignore
+
         return self.interp1d(pressure)
 
     def spreading_pressure(self, pressure: float):
         """docstring"""
         # throw exception if interpolating outside the range
         max_pressure = self.df[self.pressure_key].max()
-        if (self.fill_value is None) & (pressure > max_pressure):
+        if ((self.fill_value is None) and (self.extrap_method is None)
+            and (pressure > max_pressure)):
             raise Exception(dedent(f'''
             To compute the spreading pressure at this bulk gas pressure, we would need
             to extrapolate the isotherm since this pressure is outside the range of the
@@ -65,6 +107,14 @@ class InterpolatorIsotherm:
                 assume that the uptake beyond pressure {max_pressure} is equal to
                 `fill_value`. This is reasonable if your isotherm data exhibits
                 a plateau at the highest pressures.
+            Option 3: pass an analytical model to the construction of the
+                InterpolatorIsotherm object using 'extrap_method'. Then,
+                InterpolatorIsotherm will use the analytical model to extrapolate the
+                isotherm beyond the highest pressure in your data.
+            Option 4: pass 'linear' to the construction of the InterpolatorIsotherm
+                object using 'extrap_method'. Then, InterpolatorIsotherm will fit a line
+                to the last two points in your data and use this line to extrapolate the
+                isotherm beyond the highest pressure in your data.
             Option 3: Go back to the lab or computer to collect isotherm data
                 at higher pressures. (Extrapolation can be dangerous!)
             '''))
@@ -111,5 +161,14 @@ class InterpolatorIsotherm:
 
         return area
 
-#TODO: add option to extrapolate by fitting a line to the last two points
-#TODO: add option to extrapolate by fitting an analytical model to the data
+    def pressure(self, spreading_pressure: float):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+        raise NotImplementedError('pressure method not implemented.')

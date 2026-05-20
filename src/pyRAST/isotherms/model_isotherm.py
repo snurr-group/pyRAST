@@ -64,9 +64,6 @@ class ModelIsotherm:
         if pressure_key not in df.columns:
             raise ValueError(f'Pressure key {pressure_key} not found.')
 
-        # if model not in self.name:
-        #     raise ValueError(f'{model} is not a valid model.')
-
         # Store dataframe and keys
         self.df = df
         self.loading_key = loading_key
@@ -91,7 +88,6 @@ class ModelIsotherm:
             self.param_bounds = param_bounds
 
         self.param_guess = self.enforce_parameter_bounds(self.param_guess)
-
         # Fit model to data
         # If user provided parameters, check that keys are correct
         if model_parameters is not None:
@@ -129,6 +125,18 @@ class ModelIsotherm:
 
         """
         raise NotImplementedError('spreading_pressure method not implemented.')
+
+    def pressure(self, spreading_pressure):
+        """ One line description
+
+        Args:
+            param1(type): Description of param1
+
+        Returns:
+            type: Description of return value
+
+        """
+        raise NotImplementedError('pressure method not implemented.')
 
     def initial_guess(self):
         """ One line description
