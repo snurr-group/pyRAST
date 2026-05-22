@@ -27,21 +27,39 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
             print(f'Component {i}: Partial Pressure = {partial_pressures[i]},'
                   f' Isotherm Model = {type(isotherms[i]).__name__}')
 
+    # Softmax function to make solving more robust
+    def _softmax(u):
+        u = u - np.max(u)
+        exp_u = np.exp(u)
+        return exp_u / np.sum(exp_u)
+
     # Assert that the spreading pressures of each component are equal
-    def spreading_pressure_differences(adsorbed_mole_fractions):
+    def spreading_pressure_differences(u_free):
         """docstring"""
-        diff = np.zeros((n_components - 1,))
+        u_full = np.concatenate((u_free, [0.0]))
+        adsorbed_mole_fractions = _softmax(u_full)
+
+        # diff = np.zeros((n_components - 1,))
+        # for i in range(n_components - 1):
+        #     if i == n_components - 2:
+        #         # automatically assert \sum z_i = 1
+        #         ads_mol_frac2 = 1.0 - np.sum(adsorbed_mole_fractions)
+        #     else:
+        #         ads_mol_frac2 = adsorbed_mole_fractions[i + 1]
+        #     sp1 = isotherms[i].spreading_pressure(partial_pressures[i] /
+        #                                           adsorbed_mole_fractions[i])
+        #     sp2 = isotherms[i + 1].spreading_pressure(partial_pressures[i + 1] /
+        #                                               ads_mol_frac2)
+        #     diff[i] = sp1 - sp2
+
+        diff = np.zeros(n_components - 1)
         for i in range(n_components - 1):
-            if i == n_components - 2:
-                # automatically assert \sum z_i = 1
-                ads_mol_frac2 = 1.0 - np.sum(adsorbed_mole_fractions)
-            else:
-                ads_mol_frac2 = adsorbed_mole_fractions[i + 1]
             sp1 = isotherms[i].spreading_pressure(partial_pressures[i] /
                                                   adsorbed_mole_fractions[i])
             sp2 = isotherms[i + 1].spreading_pressure(partial_pressures[i + 1] /
-                                                      ads_mol_frac2)
+                                                      adsorbed_mole_fractions[i + 1])
             diff[i] = sp1 - sp2
+
         return diff
 
     # Solve for mole fractions in adsorbed phase by equating spreading pressures
@@ -57,8 +75,11 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
         # if list convert to numpy array
         adsorbed_mole_fraction_guess = np.asarray(adsorbed_mole_fraction_guess)
 
+    u_guess = np.log(adsorbed_mole_fraction_guess[:-1] / \
+                     adsorbed_mole_fraction_guess[-1])
+
     res = scipy.optimize.root(spreading_pressure_differences,
-                              adsorbed_mole_fraction_guess[:-1],
+                              u_guess,
                               method='lm')
 
     if not res.success:
@@ -70,11 +91,12 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
                         mole fractions by passing an array adsorbed_mole_fraction_guess
                         '''))
 
-    adsorbed_mole_fractions = res.x
+    u_sol = res.x
+    adsorbed_mole_fractions = _softmax(np.concatenate((u_sol, [0.0])))
 
-    # Concatenate mole fraction of last component
-    adsorbed_mole_fractions = np.concatenate((adsorbed_mole_fractions,
-                                             [1.0 - np.sum(adsorbed_mole_fractions)]))
+    # # Concatenate mole fraction of last component
+    # adsorbed_mole_fractions = np.concatenate((adsorbed_mole_fractions,
+    #                                          [1.0 - np.sum(adsorbed_mole_fractions)]))
 
     if np.any((adsorbed_mole_fractions < 0.0) | (adsorbed_mole_fractions > 1.0)):
         raise ValueError(dedent('''\

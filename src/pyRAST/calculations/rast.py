@@ -6,11 +6,9 @@ from textwrap import dedent
 import numpy as np
 import scipy.optimize
 
-from pyrast.activity_coefficients.activity_coefficient import ActivityCoefficient
 
-
-def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, warningoff=False,
-         adsorbed_mole_fraction_guess = None):
+def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
+         warningoff=False, adsorbed_mole_fraction_guess = None):
     """
     docstring
     """
@@ -29,19 +27,43 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, w
             print(f'Component {i}: Partial Pressure = {partial_pressures[i]},'
                   f' Isotherm Model = {type(isotherms[i]).__name__}')
 
+    def _softmax(u):
+        """docstring"""
+        u = u - np.max(u)  # for numerical stability
+        exp_u = np.exp(u)
+        return exp_u / np.sum(exp_u)
+
+    def _softplus(s):
+        """docstring"""
+        return np.log1p(np.exp(-np.abs(s))) + np.maximum(s, 0)
+
     def rast_equations(var):
         """docstring"""
-        x = np.zeros(n_components)
-        x[:-1] = var[:-1]
-        x[-1] = 1.0 - np.sum(x[:-1])
-        phi = var[-1]
-        residuals = np.zeros(n_components)
+        # x = np.zeros(n_components)
+        # x[:-1] = var[:-1]
+        # x[-1] = 1.0 - np.sum(x[:-1])
+        # phi = var[-1]
+        # residuals = np.zeros(n_components)
 
+        # gamma = activity_coefficient.gamma(x, phi)
+        # for i in range(n_components):
+        #     p0 = partial_pressures[i] / x[i] / gamma[i]
+        #     sp = isotherms[i].spreading_pressure(p0)
+        #     residuals[i] = phi - sp
+        # return residuals
+        u_free = var[:-1]
+        s = var[-1]
+        phi = _softplus(s)
+
+        u_full = np.concatenate((u_free, [0.0]))
+        x = _softmax(u_full)
+
+        residuals = np.zeros(n_components)
         gamma = activity_coefficient.gamma(x, phi)
         for i in range(n_components):
             p0 = partial_pressures[i] / x[i] / gamma[i]
             sp = isotherms[i].spreading_pressure(p0)
-            residuals[i] = phi - sp
+            residuals[i] = s - sp
         return residuals
 
     # Solve for mole fractions in adsorbed phase by equating spreading pressures
@@ -57,11 +79,19 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, w
         # if list convert to numpy array
         adsorbed_mole_fraction_guess = np.asarray(adsorbed_mole_fraction_guess)
 
-    guess = np.concatenate((adsorbed_mole_fraction_guess[:-1], [1.0]))  # initial guess for phi is 0
+    #guess = np.concatenate((adsorbed_mole_fraction_guess[:-1], [1.0]))
 
-    res = scipy.optimize.root(rast_equations,
-                              guess,
-                              method='lm')
+    x_guess = adsorbed_mole_fraction_guess
+    u_guess = np.log(x_guess[:-1] / x_guess[-1])
+    phi_guess = 1.0
+    s_guess = np.log(np.exp(phi_guess) - 1.0)
+    guess = np.concatenate((u_guess, [s_guess]))
+
+    # res = scipy.optimize.root(rast_equations,
+    #                           guess,
+    #                           method='lm')
+
+    res = scipy.optimize.root(rast_equations, guess, method='lm')
 
     if not res.success:
         print(res.message)
@@ -72,12 +102,15 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, w
                         mole fractions by passing an array adsorbed_mole_fraction_guess
                         '''))
 
-    adsorbed_mole_fractions = np.asarray(res.x[:-1])
-    phi = res.x[-1]
+    u_sol = res.x[:-1]
+    phi = np.exp(res.x[-1])
+    adsorbed_mole_fractions = _softmax(np.concatenate((u_sol, [0.0])))
+    # adsorbed_mole_fractions = np.asarray(res.x[:-1])
+    # phi = res.x[-1]
 
-    # Concatenate mole fraction of last component
-    adsorbed_mole_fractions = np.concatenate((adsorbed_mole_fractions,
-                                             [1.0 - np.sum(adsorbed_mole_fractions)]))
+    # # Concatenate mole fraction of last component
+    # adsorbed_mole_fractions = np.concatenate((adsorbed_mole_fractions,
+    #                                          [1.0 - np.sum(adsorbed_mole_fractions)]))
 
     if np.any((adsorbed_mole_fractions < 0.0) | (adsorbed_mole_fractions > 1.0)):
         print(adsorbed_mole_fractions)
@@ -87,14 +120,17 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, w
                          array or list 'adsorbed_mole_fraction_guess' to this function.
                          e.g. adsorbed_mole_fraction_guess=[0.2, 0.8]'''))
 
-    pressure0 = partial_pressures / adsorbed_mole_fractions / activity_coefficient.gamma(adsorbed_mole_fractions, phi)
+    pressure0 = partial_pressures / adsorbed_mole_fractions / \
+                activity_coefficient.gamma(adsorbed_mole_fractions, phi)
 
     # Solve for total gas adsorbed
     inverse_loading = 0.0
     for i in range(n_components):
         inverse_loading += (adsorbed_mole_fractions[i] /
                             isotherms[i].loading(pressure0[i]))
-    inverse_loading += activity_coefficient.inverse_excess_loading(adsorbed_mole_fractions, phi)
+    inverse_loading += \
+                    activity_coefficient.inverse_excess_loading(adsorbed_mole_fractions,
+                                                                phi)
     loading_total = 1.0 / inverse_loading
 
     # get loading of each component by multiplying by mole fractions

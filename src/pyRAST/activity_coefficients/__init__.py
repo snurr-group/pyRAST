@@ -1,4 +1,4 @@
-from .margules import Margules
+# ruff: noqa: F401
 from .activity_coefficient import ActivityCoefficient
-from .A import A
+from .s_margules import SMargules
 from .van_laar import VanLaar

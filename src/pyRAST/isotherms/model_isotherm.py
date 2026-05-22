@@ -151,8 +151,8 @@ class ModelIsotherm:
         loading = self.df[self.loading_key].to_numpy()
         pressure = self.df[self.pressure_key].to_numpy()
 
-        # Remove any rows with negative loading or pressure
-        mask = (loading >= 0) & (pressure >= 0)
+        # Remove any rows with negative loading or pressure <= 0
+        mask = (loading >= 0) & (pressure > 0)
         loading = loading[mask]
         pressure = pressure[mask]
 
@@ -194,8 +194,8 @@ class ModelIsotherm:
         loading = self.df[self.loading_key].to_numpy()
         pressure = self.df[self.pressure_key].to_numpy()
 
-        # Remove any rows with negative loading or pressure
-        mask = (loading >= 0) & (pressure >= 0)
+        # Remove any rows with negative loading or pressure <= 0
+        mask = (loading >= 0) & (pressure > 0)
         loading = loading[mask]
         pressure = pressure[mask]
 

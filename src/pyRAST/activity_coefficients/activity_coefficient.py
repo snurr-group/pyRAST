@@ -44,7 +44,8 @@ class ActivityCoefficient:
             ActivityCoefficient._MODELS[model_name] = cls
 
     def __init__(self, total_f: np.ndarray | list | float, y: np.ndarray | list,
-                 comp_q: np.ndarray | list, isotherms: list, model: str,
+                 comp_q: np.ndarray | list, isotherms: list, model: str, *,
+                 assume_ideal_gamma: bool = True,
                  model_parameters: dict | None = None):
         """ One line description
 
@@ -103,7 +104,10 @@ class ActivityCoefficient:
             self.model_parameters = model_parameters
         else:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
-            self._fit_to_gamma()
+            if assume_ideal_gamma:
+                self._fit_to_gamma()
+            else:
+                self._rigorous_fit_to_gamma()
 
 
     def __repr__(self):
@@ -118,23 +122,25 @@ class ActivityCoefficient:
         """docstring"""
         return np.exp(self.ln_gamma(x, phi))
 
-    def inverse_excess_loading(self, x):
+    def inverse_excess_loading(self, x, phi):
         """docstring"""
-        raise NotImplementedError('inverse_excess_loading method must be implemented in subclass.')
+        raise NotImplementedError('inverse_excess_loading method must be implemented '
+                                  'in subclass.')
 
-    def _gamma_from_loadings(self, comp_q, y, total_f):
+    def _gamma_from_loadings(self, comp_q, y, total_f, *, excess_loading = False,
+                             max_iter = 100, tol = 1e-6):
         """docstring"""
         q_total = sum(comp_q)
         x = comp_q / q_total
         p0 = np.zeros(len(self.isotherms))
 
-        def residuals(phi):
+        def residuals(phi, q_excess = 0.0):
             for i in range(len(self.isotherms)):
                 p0[i] = self.isotherms[i].pressure(phi)
             q0 = np.array([self.isotherms[i].loading(p0[i])
                            for i in range(len(self.isotherms))])
             # We make an assumption of ideality here, may need to change later
-            q_total_pred = 1.0 / np.sum(x / q0)
+            q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
             return q_total_pred - q_total
 
         phi_max = max(iso.spreading_pressure(total_f * 10)
@@ -144,10 +150,28 @@ class ActivityCoefficient:
         for i in range(len(self.isotherms)):
             p0[i] = self.isotherms[i].pressure(phi_sol)
         gamma = (y * total_f) / (p0 * x)
+        if not excess_loading:
+            return gamma, phi_sol
+
+        # Iterative excess loading correction
+        for iteration in range(max_iter):
+            gamma_old = gamma.copy()
+            q_excess = self.inverse_excess_loading(x, phi_sol)
+            # Resolve phi with excess loading correction
+            phi_sol = cast('float', brentq(lambda phi: residuals(phi, q_excess), 1e-10,
+                                           phi_max))
+            for i in range(len(self.isotherms)):
+                p0[i] = self.isotherms[i].pressure(phi_sol)
+            gamma = (y * total_f) / (p0 * x)
+
+            if np.all(np.abs(gamma - gamma_old) < tol):
+                break
+        else:
+            print('gamma from loadings did not converge')
 
         return gamma, phi_sol
 
-    def _fit_to_gamma(self):
+    def _fit_to_gamma(self, *, excess_loading = False):
         """docstring"""
         '''gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f)
         x = self.comp_q / np.sum(self.comp_q)
@@ -161,4 +185,22 @@ class ActivityCoefficient:
         self.model_parameters = dict(zip(self.param_names, res))'''
         pass
 
+    def _rigorous_fit_to_gamma(self, max_iter = 100, tol = 1e-6):
+        """docstring"""
+        # First pass for model parameters is use ideal case
+        self._fit_to_gamma()
+
+        # Now we want to iteratively get more accurate model parameters
+        for iteration in range(max_iter):
+            params_old = self.model_parameters.copy()
+            self._fit_to_gamma(excess_loading=True)
+            # Check convergence
+            if all(abs(self.model_parameters[param] - params_old[param]) < tol
+                   for param in self.param_names):
+                print(f'Converged after {iteration + 1} iterations.')
+                break
+
+        # If we reach max iterations without convergence, print warning
+        else:
+            print('did not converge')
 

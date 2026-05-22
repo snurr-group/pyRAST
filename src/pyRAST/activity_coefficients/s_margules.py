@@ -9,10 +9,10 @@ from scipy.optimize import least_squares
 from pyrast.activity_coefficients.activity_coefficient import ActivityCoefficient
 
 
-class Margules(ActivityCoefficient, model_name='Margules'):
+class SMargules(ActivityCoefficient, model_name='sMargules'):
 
     # Class variables for every instance
-    name = 'Margules'
+    name = 'sMargules'
     param_names = ('A', 'C')
     param_default_bounds = ((-np.inf, np.inf), (-np.inf, np.inf))
 
@@ -29,11 +29,12 @@ class Margules(ActivityCoefficient, model_name='Margules'):
         return self.model_parameters['A'] * self.model_parameters['C'] * x[0] * x[1] * \
                np.exp(-self.model_parameters['C'] * phi)
 
-    def _fit_to_gamma(self):
+    def _fit_to_gamma(self, *, excess_loading = False):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed
-            gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f)
+            gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f,
+                                                   excess_loading=excess_loading)
             x = self.comp_q / np.sum(self.comp_q)
             lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
             lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
@@ -41,7 +42,7 @@ class Margules(ActivityCoefficient, model_name='Margules'):
             c = 0.2
             correction = 1.0 - np.exp(-c * phi)
             self.model_parameters = {'A': lhs / correction, 'C': c}
-            print(self.model_parameters)
+
         else:
             # Handle the case where multiple data points are provided
             # In this case, we can fit C and determine A as an analytical function
@@ -52,7 +53,8 @@ class Margules(ActivityCoefficient, model_name='Margules'):
 
             for i in range(points):
                 gamma, phi[i] = self._gamma_from_loadings(self.comp_q[i], self.y[i],
-                                                          self.total_f[i])
+                                                          self.total_f[i],
+                                                          excess_loading=excess_loading)
                 x = self.comp_q[i] / np.sum(self.comp_q[i])
                 lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
                 lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
@@ -75,4 +77,6 @@ class Margules(ActivityCoefficient, model_name='Margules'):
             # maybe check residuals here to be safe
 
             self.model_parameters = {'A': a_fit, 'C': c_fit}
-            print(self.model_parameters)
+
+
+
