@@ -4,11 +4,10 @@ functions of activity coefficient parent class go here
 """
 # ruff: noqa: TC002
 
-import numpy as np
-from scipy.optimize import brentq, fsolve
+from typing import cast
 
-from pyrast.isotherms.interpolator_isotherm import InterpolatorIsotherm
-from pyrast.isotherms.model_isotherm import ModelIsotherm
+import numpy as np
+from scipy.optimize import brentq
 
 
 class ActivityCoefficient:
@@ -21,7 +20,7 @@ class ActivityCoefficient:
     param_default_bounds: tuple
 
     # Instance variables
-    total_p: float
+    total_f: float | np.ndarray
     y: np.ndarray
     comp_q: np.ndarray
     isotherms: list
@@ -44,8 +43,9 @@ class ActivityCoefficient:
         if model_name:
             ActivityCoefficient._MODELS[model_name] = cls
 
-    def __init__(self, total_p: float, y: np.ndarray | list, comp_q: np.ndarray | list,
-                 isotherms: list, model: str, model_parameters: dict | None = None):
+    def __init__(self, total_f: np.ndarray | list | float, y: np.ndarray | list,
+                 comp_q: np.ndarray | list, isotherms: list, model: str,
+                 model_parameters: dict | None = None):
         """ One line description
 
         Args:
@@ -55,21 +55,39 @@ class ActivityCoefficient:
             type: Description of return value
 
         """
-
-        # Validate inputs
-        if total_p <= 0:
-            raise ValueError('Total pressure must be positive.')
-        if len(y) != len(comp_q):
-            raise ValueError('Length of y and comp_q must be the same.')
-        if not np.isclose(sum(y), 1.0):
-            raise ValueError('Gas phase mole fractions must sum to 1.0.')
-        if not all(q >= 0 for q in comp_q):
-            raise ValueError('Adsorbed phase loadings must be non-negative.')
-        if len(isotherms) != len(y):
-            raise ValueError('Length of isotherms must match length of y and comp_q.')
+        # If total_f is a float, ensure y and comp_q are 1D
+        if isinstance(total_f, (int, float)):
+            total_f = float(total_f)
+            if total_f <= 0:
+                raise ValueError('Total fugacity must be positive.')
+            if len(y) != len(comp_q):
+                raise ValueError('Length of y and comp_q must be the same.')
+            if not np.isclose(sum(y), 1.0):
+                raise ValueError('Gas phase mole fractions must sum to 1.0.')
+            if not all(q >= 0 for q in comp_q):
+                raise ValueError('Adsorbed phase loadings must be non-negative.')
+            if len(isotherms) != len(y):
+                raise ValueError('Length of isotherms must match length of y and comp_q'
+                                 '.')
+        else: # Multiple fugacity points provided as 2D arrays
+            total_f = np.asarray(total_f, dtype=float)
+            for f in total_f:
+                if f <= 0:
+                    raise ValueError('Total fugacity must be positive.')
+            y = np.asarray(y)
+            comp_q = np.asarray(comp_q)
+            if y.shape != comp_q.shape:
+                raise ValueError('y and comp_q must have the same dimensions.')
+            if not np.allclose(np.sum(y, axis=1), 1.0):
+                raise ValueError('All gas phase mole fractions must sum to 1.0.')
+            if not np.all(comp_q >= 0):
+                raise ValueError('All adsorbed phase loadings must be non-negative.')
+            if len(isotherms) != y.shape[1]:
+                raise ValueError('Length of isotherms must match number of components '
+                                 'in y and comp_q.')
 
         # Store data
-        self.total_p = total_p
+        self.total_f = total_f
         self.y = np.asarray(y)
         self.comp_q = np.asarray(comp_q)
         self.isotherms = isotherms
@@ -85,6 +103,7 @@ class ActivityCoefficient:
             self.model_parameters = model_parameters
         else:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
+            self._fit_to_gamma()
 
 
     def __repr__(self):
@@ -103,10 +122,10 @@ class ActivityCoefficient:
         """docstring"""
         raise NotImplementedError('inverse_excess_loading method must be implemented in subclass.')
 
-    def _gamma_from_loadings(self):
+    def _gamma_from_loadings(self, comp_q, y, total_f):
         """docstring"""
-        q_total = sum(self.comp_q)
-        x = self.comp_q / q_total
+        q_total = sum(comp_q)
+        x = comp_q / q_total
         p0 = np.zeros(len(self.isotherms))
 
         def residuals(phi):
@@ -118,19 +137,19 @@ class ActivityCoefficient:
             q_total_pred = 1.0 / np.sum(x / q0)
             return q_total_pred - q_total
 
-        phi_max = max(iso.spreading_pressure(self.total_p * 10)
+        phi_max = max(iso.spreading_pressure(total_f * 10)
                       for iso in self.isotherms)
-        phi_sol = brentq(residuals, 1e-10, phi_max)
+        phi_sol = cast('float', brentq(residuals, 1e-10, phi_max))
 
         for i in range(len(self.isotherms)):
             p0[i] = self.isotherms[i].pressure(phi_sol)
-        gamma = (self.y * self.total_p) / (p0 * x)
+        gamma = (y * total_f) / (p0 * x)
 
         return gamma, phi_sol
 
     def _fit_to_gamma(self):
         """docstring"""
-        gamma, phi = self._gamma_from_loadings()
+        '''gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f)
         x = self.comp_q / np.sum(self.comp_q)
 
         def residuals(params):
@@ -139,6 +158,7 @@ class ActivityCoefficient:
 
         res = fsolve(residuals, [1.0] * len(self.param_names))
 
-        self.model_parameters = dict(zip(self.param_names, res))
+        self.model_parameters = dict(zip(self.param_names, res))'''
+        pass
 
 

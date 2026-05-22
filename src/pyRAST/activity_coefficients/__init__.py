@@ -1,4 +1,4 @@
-from .AC import AC
+from .margules import Margules
 from .activity_coefficient import ActivityCoefficient
 from .A import A
-from .aac import AAC
+from .van_laar import VanLaar

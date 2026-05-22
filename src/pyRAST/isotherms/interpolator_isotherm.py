@@ -9,6 +9,7 @@ from textwrap import dedent
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
+from scipy.optimize import brentq
 
 from pyrast.isotherms.model_isotherm import ModelIsotherm
 
@@ -161,7 +162,7 @@ class InterpolatorIsotherm:
 
         return area
 
-    def pressure(self, spreading_pressure: float):
+    def pressure(self, target_phi: float):
         """ One line description
 
         Args:
@@ -171,4 +172,45 @@ class InterpolatorIsotherm:
             type: Description of return value
 
         """
-        raise NotImplementedError('pressure method not implemented.')
+        # Get all data points that are at nonzero pressures
+        pressures = self.df[self.pressure_key].values[
+                    self.df[self.pressure_key].values != 0.0]
+        loadings = self.df[self.loading_key].values[
+                   self.df[self.pressure_key].values != 0.0]
+
+        henry_const = loadings[0] / pressures[0]
+
+        phi_at_p1 = henry_const * pressures[0]
+        if target_phi <= phi_at_p1:
+            return target_phi / henry_const
+
+        # Accumulate phi segment by segment
+        phi = phi_at_p1
+        for i in range(len(pressures) - 1):
+            slope = (loadings[i+1] - loadings[i]) / (pressures[i+1] - pressures[i])
+            intercept = loadings[i] - slope * pressures[i]
+            phi_segment = (slope * (pressures[i+1] - pressures[i])
+                        + intercept * np.log(pressures[i+1] / pressures[i]))
+            phi_next = phi + phi_segment
+
+            if target_phi <= phi_next:
+                # target is within this segment — brentq over [p_i, p_{i+1}] only
+                phi_at_pi = phi
+                def residual(p):
+                    seg_area = (slope * (p - pressures[i])
+                                + intercept * np.log(p / pressures[i]))
+                    return phi_at_pi + seg_area - target_phi
+
+                return brentq(residual, pressures[i], pressures[i+1])
+
+            phi = phi_next
+
+        if self.extrap_method is not None:
+            # update this to include extrapolation
+            pass
+
+        # target_phi is beyond the data range
+        raise ValueError(
+            f"target_phi={target_phi:.4f} exceeds Φ at max pressure "
+            f"({phi:.4f}). Extrapolation required."
+        )

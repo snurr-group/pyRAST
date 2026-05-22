@@ -22,9 +22,9 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
         return (self.model_parameters["M"] *
                 np.log(1.0 + self.model_parameters["K"] * pressure))
 
-    def pressure(self, spreading_pressure: float):
+    def pressure(self, target_phi: float):
         return (1.0 / self.model_parameters["K"]) * \
-                (np.exp(spreading_pressure / self.model_parameters["M"]) - 1.0)
+                (np.exp(target_phi / self.model_parameters["M"]) - 1.0)
 
     def initial_guess(self):
         return super().initial_guess()

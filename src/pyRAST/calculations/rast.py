@@ -35,7 +35,6 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, w
         x[:-1] = var[:-1]
         x[-1] = 1.0 - np.sum(x[:-1])
         phi = var[-1]
-
         residuals = np.zeros(n_components)
 
         gamma = activity_coefficient.gamma(x, phi)
@@ -58,7 +57,7 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, w
         # if list convert to numpy array
         adsorbed_mole_fraction_guess = np.asarray(adsorbed_mole_fraction_guess)
 
-    guess = np.concatenate((adsorbed_mole_fraction_guess[:-1], [0.0]))  # initial guess for phi is 0
+    guess = np.concatenate((adsorbed_mole_fraction_guess[:-1], [1.0]))  # initial guess for phi is 0
 
     res = scipy.optimize.root(rast_equations,
                               guess,
@@ -81,6 +80,7 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False, w
                                              [1.0 - np.sum(adsorbed_mole_fractions)]))
 
     if np.any((adsorbed_mole_fractions < 0.0) | (adsorbed_mole_fractions > 1.0)):
+        print(adsorbed_mole_fractions)
         raise ValueError(dedent('''\
                          Adsorbed mole fraction not in [0, 1]. Try a different
                          starting guess for the adsorbed mole fractions by passing an

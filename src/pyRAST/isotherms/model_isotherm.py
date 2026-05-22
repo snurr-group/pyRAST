@@ -126,7 +126,7 @@ class ModelIsotherm:
         """
         raise NotImplementedError('spreading_pressure method not implemented.')
 
-    def pressure(self, spreading_pressure):
+    def pressure(self, target_phi):
         """ One line description
 
         Args:
