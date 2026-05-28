@@ -2,12 +2,13 @@
 functions of activity coefficient parent class go here
 
 """
-# ruff: noqa: TC002
 
 from typing import cast
 
 import numpy as np
 from scipy.optimize import brentq
+
+from pyrast.isotherms.interpolator_isotherm import InterpolatorIsotherm
 
 
 class ActivityCoefficient:
@@ -45,7 +46,7 @@ class ActivityCoefficient:
 
     def __init__(self, total_f: np.ndarray | list | float, y: np.ndarray | list,
                  comp_q: np.ndarray | list, isotherms: list, model: str, *,
-                 assume_ideal_gamma: bool = True,
+                 assume_ideal_gamma: bool = False,
                  model_parameters: dict | None = None):
         """ One line description
 
@@ -128,7 +129,7 @@ class ActivityCoefficient:
                                   'in subclass.')
 
     def _gamma_from_loadings(self, comp_q, y, total_f, *, excess_loading = False,
-                             max_iter = 100, tol = 1e-6):
+                             max_iter = 100, tol = 1e-3):
         """docstring"""
         q_total = sum(comp_q)
         x = comp_q / q_total
@@ -143,9 +144,57 @@ class ActivityCoefficient:
             q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
             return q_total_pred - q_total
 
-        phi_max = max(iso.spreading_pressure(total_f * 10)
-                      for iso in self.isotherms)
-        phi_sol = cast('float', brentq(residuals, 1e-10, phi_max))
+        # Use a bracketing strategy to ensure brentq can find a root.
+        def _bracket_phi(residuals, q_excess = 0.0, phi_low = 1e-12, phi_high = 1.0,
+                         max_expand = 60, phi_cap = np.inf):
+            def _phi_cap_for_isotherm(iso, total_f):
+                if isinstance(iso, InterpolatorIsotherm):
+                    if iso.extrap_method is not None or iso.fill_value is not None:
+                        return np.inf
+                    p_max = iso.df[iso.pressure_key].max()
+                    return iso.spreading_pressure(p_max)
+                return np.inf
+
+            # Compute the cap if there is one
+            caps = [_phi_cap_for_isotherm(iso, total_f) for iso in self.isotherms]
+            phi_cap = min(caps) if any(np.isfinite(caps)) else np.inf
+
+            f_low = residuals(phi_low, q_excess=q_excess)
+            if not np.isfinite(f_low):
+                raise ValueError('Residual is not finite at initial phi_low.')
+
+            f_high = residuals(phi_high, q_excess=q_excess)
+            while not np.isfinite(f_high) and phi_high > phi_low:
+                phi_high *= 0.5
+                f_high = residuals(phi_high, q_excess=q_excess)
+
+            if not np.isfinite(f_high):
+                raise ValueError('Could not find finite residual at initial phi_high.')
+
+            for _ in range(max_expand):
+                if np.isfinite(f_high) and np.sign(f_low) != np.sign(f_high):
+                    return phi_low, phi_high
+
+                if np.isfinite(phi_cap) and phi_high >= phi_cap:
+                    break
+
+                phi_high = min(phi_high * 2.0,
+                               phi_cap) if np.isfinite(phi_cap) else phi_high * 2.0
+                f_high = residuals(phi_high, q_excess=q_excess)
+
+                # if we just hit a NaN/inf, back off once
+                if not np.isfinite(f_high):
+                    phi_high *= 0.5
+                    f_high = residuals(phi_high, q_excess=q_excess)
+                    if not np.isfinite(f_high):
+                        break
+
+            raise ValueError("Could not find valid bracketing for root finding")
+
+        phi_low, phi_high = _bracket_phi(residuals)
+        # phi_max = max(iso.spreading_pressure(total_f * 10)
+        #               for iso in self.isotherms)
+        phi_sol = cast('float', brentq(residuals, phi_low, phi_high))
 
         for i in range(len(self.isotherms)):
             p0[i] = self.isotherms[i].pressure(phi_sol)
@@ -157,9 +206,11 @@ class ActivityCoefficient:
         for iteration in range(max_iter):
             gamma_old = gamma.copy()
             q_excess = self.inverse_excess_loading(x, phi_sol)
+
+            phi_low, phi_high = _bracket_phi(residuals, q_excess = q_excess)
             # Resolve phi with excess loading correction
-            phi_sol = cast('float', brentq(lambda phi: residuals(phi, q_excess), 1e-10,
-                                           phi_max))
+            phi_sol = cast('float', brentq(residuals,
+                                           phi_low, phi_high, args=(q_excess,)))
             for i in range(len(self.isotherms)):
                 p0[i] = self.isotherms[i].pressure(phi_sol)
             gamma = (y * total_f) / (p0 * x)
@@ -185,7 +236,7 @@ class ActivityCoefficient:
         self.model_parameters = dict(zip(self.param_names, res))'''
         pass
 
-    def _rigorous_fit_to_gamma(self, max_iter = 100, tol = 1e-6):
+    def _rigorous_fit_to_gamma(self, max_iter = 100, tol = 1e-4):
         """docstring"""
         # First pass for model parameters is use ideal case
         self._fit_to_gamma()
@@ -194,7 +245,16 @@ class ActivityCoefficient:
         for iteration in range(max_iter):
             params_old = self.model_parameters.copy()
             self._fit_to_gamma(excess_loading=True)
+
+            alpha = 0.2
+            params_new = self.model_parameters.copy()
+
+            for k in self.param_names:
+                self.model_parameters[k] = alpha * params_new[k] + (1 - alpha) * \
+                    params_old[k]
+
             # Check convergence
+            print(f'Iteration {iteration + 1}, model parameters: {self.model_parameters}')
             if all(abs(self.model_parameters[param] - params_old[param]) < tol
                    for param in self.param_names):
                 print(f'Converged after {iteration + 1} iterations.')
@@ -203,4 +263,3 @@ class ActivityCoefficient:
         # If we reach max iterations without convergence, print warning
         else:
             print('did not converge')
-

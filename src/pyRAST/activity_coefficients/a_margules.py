@@ -8,10 +8,10 @@ from scipy.optimize import least_squares
 from pyrast.activity_coefficients.activity_coefficient import ActivityCoefficient
 
 
-class VanLaar(ActivityCoefficient, model_name='VanLaar'):
+class AMargules(ActivityCoefficient, model_name='aMargules'):
 
     # Class variables for every instance
-    name = 'VanLaar'
+    name = 'aMargules'
     param_names = ('A12', 'A21', 'C')
     param_default_bounds = ((-np.inf, np.inf), (-np.inf, np.inf), (-np.inf, np.inf))
 
@@ -21,8 +21,8 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
         a21 = self.model_parameters['A21']
         c = self.model_parameters['C']
         f = 1.0 - np.exp(-c * phi)
-        ln_gamma0 = a12 * f / (1.0 + (a12 * x[0]) / (a21 * x[1]))**2
-        ln_gamma1 = a21 * f / (1.0 + (a21 * x[1]) / (a12 * x[0]))**2
+        ln_gamma0 = x[1]**2 * f * (a12 + 2*(a21 - a12)*x[0])
+        ln_gamma1 = x[0]**2 * f * (a21 + 2*(a12 - a21)*x[1])
         return np.array([ln_gamma0, ln_gamma1])
 
     def inverse_excess_loading(self, x, phi):
@@ -31,7 +31,7 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
         a21 = self.model_parameters['A21']
         c = self.model_parameters['C']
 
-        return c * a12 * a21 * x[0] * x[1] * np.exp(-c * phi) / (a12*x[0] + a21*x[1])
+        return c * x[0] * x[1] * np.exp(-c * phi) * (a12*x[1] + a21*x[0])
 
     def _fit_to_gamma(self, *, excess_loading = False):
         """docstring"""
@@ -42,10 +42,12 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
             x = self.comp_q / np.sum(self.comp_q)
             c = 5
             f = 1.0 - np.exp(-c * phi)
-            a12 = (np.log(gamma[0])/f) * (1.0 + \
-                  (x[1] * np.log(gamma[1]))/(x[0]*np.log(gamma[0])))**2
-            a21 = (np.log(gamma[1])/f) * (1.0 + \
-                  (x[0] * np.log(gamma[0]))/(x[1]*np.log(gamma[1])))**2
+            a12 = (2 * x[1]**2 * np.log(gamma[1]) + 2 * x[0] * x[1] * np.log(gamma[0]) \
+                   - x[0] * np.log(gamma[0])) / (f * x[0] * x[1]**2 * (2 * x[0] + 2 * \
+                                                                       x[1] - 1))
+            a21 = (2 * x[0]**2 * np.log(gamma[0]) + 2 * x[0] * x[1] * np.log(gamma[1]) \
+                   - x[1] * np.log(gamma[1])) / (f * x[1] * x[0]**2 * (2 * x[0] + 2 * \
+                                                                       x[1] - 1))
             self.model_parameters = {'A12': a12, 'A21': a21, 'C': c}
 
         else:
@@ -69,8 +71,12 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
             def effective_parameters(i):
                 ln_g = np.log(gamma[i])
                 x = xs[i]
-                a12_eff = ln_g[0] * (1.0 + (x[1] * ln_g[1])/(x[0]*ln_g[0]))**2
-                a21_eff = ln_g[1] * (1.0 + (x[0] * ln_g[0])/(x[1]*ln_g[1]))**2
+                a12_eff = (2 * x[1]**2 * ln_g[1] + 2 * x[0] * x[1] * \
+                           ln_g[0] - x[0] * ln_g[0]) / \
+                            (x[0] * x[1]**2 * (2 * x[0] + 2 * x[1] - 1))
+                a21_eff = (2 * x[0]**2 * ln_g[0] + 2 * x[1] * x[0] * \
+                           ln_g[1] - x[1] * ln_g[1]) / \
+                            (x[1] * x[0]**2 * (2 * x[0] + 2 * x[1] - 1))
                 return a12_eff, a21_eff
 
             a12_effs = np.asarray([effective_parameters(i)[0] for i in range(points)])
@@ -86,7 +92,7 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
                 res21 = a21 *f - a21_effs
                 return np.concatenate((res12, res21))
 
-            res = least_squares(residuals, x0=0.2, bounds=(1e-6, np.inf))
+            res = least_squares(residuals, x0=0.2, bounds=(1e-15, np.inf))
             c_fit = res.x[0]
             f_fit = phi if c_fit <= 1e-6 else (1.0 - np.exp(-c_fit * phi))
             denom = np.dot(f_fit, f_fit)

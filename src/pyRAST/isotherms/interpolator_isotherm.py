@@ -40,6 +40,8 @@ class InterpolatorIsotherm:
             raise ValueError('loading_key and pressure_key must be provided.')
         self.loading_key = loading_key
         self.pressure_key = pressure_key
+        if extrap_method == 'Linear':
+            extrap_method = 'linear'
 
         if fill_value is None:
             # If no fill value is provided, check for extrapolation method
@@ -205,12 +207,36 @@ class InterpolatorIsotherm:
 
             phi = phi_next
 
-        if self.extrap_method is not None:
-            # update this to include extrapolation
-            pass
+        if self.extrap_method == 'Langmuir' and self.extrap_isotherm is not None:
+            return self.extrap_isotherm.pressure(target_phi) # type: ignore
+
+        if (self.extrap_method in ModelIsotherm._MODELS and
+            self.extrap_method is not None):
+            # target_phi is beyond the data range, but we have an extrapolation model
+            def extrap_residual(p):
+                return self.extrap_isotherm.spreading_pressure(p) - target_phi  # type: ignore
+
+            lo = pressures[-1]
+            f_lo = extrap_residual(lo)
+
+            hi = lo * 2.0
+            f_hi = extrap_residual(hi)
+
+            max_expand = 60
+            for _ in range(max_expand):
+                if np.sign(f_lo) != np.sign(f_hi) and np.isfinite(f_hi):
+                    break
+                hi *= 2.0
+                f_hi = extrap_residual(hi)
+
+            if np.sign(f_lo) == np.sign(f_hi):
+                raise ValueError('Could not bracket extrapolated pressure for '
+                                 'target_phi.')
+
+            return brentq(extrap_residual, lo, hi)
 
         # target_phi is beyond the data range
-        raise ValueError(
-            f"target_phi={target_phi:.4f} exceeds Φ at max pressure "
-            f"({phi:.4f}). Extrapolation required."
+        raise ValueError( #TODO: rewrite this error message
+            f'target_phi={target_phi:.4f} exceeds Φ at max pressure '
+            f'({phi:.4f}). Extrapolation required.',
         )

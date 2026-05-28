@@ -62,8 +62,7 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
         gamma = activity_coefficient.gamma(x, phi)
         for i in range(n_components):
             p0 = partial_pressures[i] / x[i] / gamma[i]
-            sp = isotherms[i].spreading_pressure(p0)
-            residuals[i] = s - sp
+            residuals[i] = phi - isotherms[i].spreading_pressure(p0)
         return residuals
 
     # Solve for mole fractions in adsorbed phase by equating spreading pressures
@@ -87,10 +86,6 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
     s_guess = np.log(np.exp(phi_guess) - 1.0)
     guess = np.concatenate((u_guess, [s_guess]))
 
-    # res = scipy.optimize.root(rast_equations,
-    #                           guess,
-    #                           method='lm')
-
     res = scipy.optimize.root(rast_equations, guess, method='lm')
 
     if not res.success:
@@ -103,7 +98,7 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
                         '''))
 
     u_sol = res.x[:-1]
-    phi = np.exp(res.x[-1])
+    phi = _softplus(res.x[-1])
     adsorbed_mole_fractions = _softmax(np.concatenate((u_sol, [0.0])))
     # adsorbed_mole_fractions = np.asarray(res.x[:-1])
     # phi = res.x[-1]
