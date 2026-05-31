@@ -3,25 +3,21 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-pyRAST documentation
-====================
+======
+pyRAST
+======
 
-Add your content using ``reStructuredText`` syntax. See the
-`reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
-documentation for details.
-
+.. include:: ../../README.rst
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :hidden:
 
-.. automodule:: pyrast
-    :members:
+   self
 
-.. automodule:: pyrast.calculations.rast
-    :members:
+.. toctree::
+   :maxdepth: 4
+   :caption: Contents
+   :hidden:
 
-.. autoclass:: pyrast.isotherms.ModelIsotherm
-   :members:
-
-.. autoclass:: pyrast.isotherms.InterpolatorIsotherm
+   reference/index
+   examples/index
