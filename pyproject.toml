@@ -1,3 +1,7 @@
+[project]
+name = "pyRAST"
+version = "0.0.1"
+
 [tool.ruff]
 target-version = "py314"
 line-length = 88
@@ -37,6 +41,4 @@ indent-style = "space"
 requires=["setuptools"]
 build-backend = "setuptools.build_meta"
 
-[project]
-name = "pyRAST"
-version = "0.0.1"
+

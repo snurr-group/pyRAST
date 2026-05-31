@@ -38,7 +38,6 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
         """docstring"""
         u_full = np.concatenate((u_free, [0.0]))
         adsorbed_mole_fractions = _softmax(u_full)
-
         # diff = np.zeros((n_components - 1,))
         # for i in range(n_components - 1):
         #     if i == n_components - 2:
@@ -58,7 +57,9 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
                                                   adsorbed_mole_fractions[i])
             sp2 = isotherms[i + 1].spreading_pressure(partial_pressures[i + 1] /
                                                       adsorbed_mole_fractions[i + 1])
-            diff[i] = sp1 - sp2
+
+            scale = 0.5 * (abs(sp1) + abs(sp2)) + 1e-12 # prevent division by zero
+            diff[i] = (sp1 - sp2) / scale
 
         return diff
 
