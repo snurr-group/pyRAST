@@ -58,8 +58,7 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
             sp2 = isotherms[i + 1].spreading_pressure(partial_pressures[i + 1] /
                                                       adsorbed_mole_fractions[i + 1])
 
-            scale = 0.5 * (abs(sp1) + abs(sp2)) + 1e-12 # prevent division by zero
-            diff[i] = (sp1 - sp2) / scale
+            diff[i] = sp1 - sp2
 
         return diff
 

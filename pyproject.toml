@@ -1,6 +1,35 @@
 [project]
 name = "pyRAST"
 version = "0.0.1"
+readme = "README.rst"
+keywords = ["adsorption", "thermodynamics", "isotherm"]
+requires-python = ">=3.6"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Jonah Finkelstein", email = "jonahfinkelstein2003@gmail.com"}
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+all = ["pyrast[dev,docs,test]"]
+dev = [
+    "pyrast[test,docs]",
+    "pylint",
+    "ruff",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+test = [
+    
+]
+
 
 [tool.ruff]
 target-version = "py314"

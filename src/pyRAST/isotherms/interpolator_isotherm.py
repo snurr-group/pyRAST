@@ -8,7 +8,7 @@ from textwrap import dedent
 
 import numpy as np
 import pandas as pd
-from scipy.integrate import quad
+from scipy.integrate import cumulative_trapezoid
 from scipy.interpolate import PchipInterpolator, interp1d
 from scipy.optimize import brentq
 
@@ -24,10 +24,11 @@ class InterpolatorIsotherm:
     interp1d: interp1d
     fill_value: float | None = None
     extrap_method: str | None = None
-    extrap_isotherm: ModelIsotherm | None = None
+    extrap_points: int
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str,
-                 fill_value=None, extrap_method: str | None = None, **fit_options):
+                 fill_value = None, extrap_method: str | None = None,
+                 extrap_p: float = 1e20, extrap_points: int = 100, **fit_options):
         """docstring"""
 
         # If pressure = 0 not in data frame, add it for interpolation purposes
@@ -48,32 +49,41 @@ class InterpolatorIsotherm:
             # If no fill value is provided, check for extrapolation method
             if extrap_method == 'linear' and extrap_method is not None:
                 self.extrap_method = 'linear'
-                high_p = 10e20
                 final_load = self.df[self.loading_key].values[-1]
                 final_pressure = self.df[self.pressure_key].values[-1]
                 second_to_last_load = self.df[self.loading_key].values[-2]
                 second_to_last_pressure = self.df[self.pressure_key].values[-2]
                 slope = ((final_load - second_to_last_load) /
                          (final_pressure - second_to_last_pressure))
-                next_point = final_load + slope * (high_p - final_pressure)
-                new_row = pd.DataFrame({self.pressure_key: [high_p],
+                next_point = final_load + slope * (extrap_p - final_pressure)
+                new_row = pd.DataFrame({self.pressure_key: [extrap_p],
                                         self.loading_key: [next_point]})
                 self.df = pd.concat([self.df, new_row], ignore_index=True)
-
+                self.extrap_points = 1
             elif extrap_method in ModelIsotherm._MODELS and extrap_method is not None:
                 self.extrap_method = extrap_method
-                try:
-                    self.extrap_isotherm = ModelIsotherm(df=df.iloc[1:],
-                                                         loading_key=loading_key,
-                                                         pressure_key=pressure_key,
-                                                         model=extrap_method,
-                                                         **fit_options)
-                except Exception as e:
-                    print(dedent(f'''
-                    The extrapolation failed when fitting the {extrap_method} model.
-                    The error message from the fitting procedure is: {e}'''))
-                    print('The extrapolation method will be set to None')
-                    self.extrap_method = None
+
+                extrap_isotherm = ModelIsotherm(df=df.iloc[1:], loading_key=loading_key,
+                                                pressure_key=pressure_key,
+                                                model=extrap_method, **fit_options)
+                iso_load = extrap_isotherm.loading(self.df[self.pressure_key].max())
+                final_load = self.df[self.loading_key].values[-1]
+                extrap_iso_shift = final_load - iso_load
+                extrap_pressures = np.logspace(np.log10(self.df[self.pressure_key]
+                                                        .max()), np.log10(extrap_p),
+                                                num=extrap_points)[1:]
+                extrap_loadings = (extrap_isotherm.loading(extrap_pressures)
+                                    + extrap_iso_shift)
+                extrap_df = pd.DataFrame({pressure_key: extrap_pressures,
+                                            loading_key: extrap_loadings})
+                self.df = pd.concat([self.df, extrap_df], ignore_index=True)
+                self.extrap_points = extrap_points
+                # except Exception as e:
+                #     print(dedent(f'''
+                #     The extrapolation failed when fitting the {extrap_method} model.
+                #     The error message from the fitting procedure is: {e}'''))
+                #     print('The extrapolation method will be set to None')
+                #     self.extrap_method = None
 
             self.interp1d = interp1d(self.df[pressure_key], self.df[loading_key])
         else:
@@ -83,10 +93,6 @@ class InterpolatorIsotherm:
 
     def loading(self, pressure: float):
         """docstring"""
-
-        if ((self.fill_value is None) and (self.extrap_method is not None)
-            and (pressure > self.df[self.pressure_key].max())):
-            return self.extrap_isotherm.loading(pressure) # type: ignore
 
         return self.interp1d(pressure)
 
@@ -208,34 +214,6 @@ class InterpolatorIsotherm:
 
             phi = phi_next
 
-        if self.extrap_method == 'Langmuir' and self.extrap_isotherm is not None:
-            return self.extrap_isotherm.pressure(target_phi) # type: ignore
-
-        if (self.extrap_method in ModelIsotherm._MODELS and
-            self.extrap_method is not None):
-            # target_phi is beyond the data range, but we have an extrapolation model
-            def extrap_residual(p):
-                return self.extrap_isotherm.spreading_pressure(p) - target_phi  # type: ignore
-
-            lo = pressures[-1]
-            f_lo = extrap_residual(lo)
-
-            hi = lo * 2.0
-            f_hi = extrap_residual(hi)
-
-            max_expand = 60
-            for _ in range(max_expand):
-                if np.sign(f_lo) != np.sign(f_hi) and np.isfinite(f_hi):
-                    break
-                hi *= 2.0
-                f_hi = extrap_residual(hi)
-
-            if np.sign(f_lo) == np.sign(f_hi):
-                raise ValueError('Could not bracket extrapolated pressure for '
-                                 'target_phi.')
-
-            return brentq(extrap_residual, lo, hi)
-
         # target_phi is beyond the data range
         raise ValueError( #TODO: rewrite this error message
             f'target_phi={target_phi:.4f} exceeds Φ at max pressure '
@@ -249,16 +227,19 @@ class PCHIPInterpolatorIsotherm:
     df: pd.DataFrame
     loading_key: str
     pressure_key: str
-    pchip: PchipInterpolator
-    extrap_method: str | None = None
-    extrap_isotherm: ModelIsotherm | None = None
+    load_pchip: PchipInterpolator
+    spread_pchip: PchipInterpolator
+    p0_pchip: PchipInterpolator
     henry_const: float
     first_pressure: float
+    extrap_method: str | None = None
+    extrap_points: int
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str,
-                 fill_value=None, extrap_method: str | None = None, **fit_options):
+                 grid_points: int = 500, fill_value = None,
+                 extrap_method: str | None = None, extrap_p: float = 1e20,
+                 extrap_points: int = 100, **fit_options):
         """docstring"""
-
         # Store isotherm data in self
         self.df = df.sort_values(by=pressure_key, ascending=True)
         if None in [loading_key, pressure_key]:
@@ -268,38 +249,84 @@ class PCHIPInterpolatorIsotherm:
         if extrap_method == 'Linear':
             extrap_method = 'linear'
 
-        pressures_all = self.df[self.pressure_key].values
-        loadings_all = self.df[self.loading_key].values
-        nonzero_mask = pressures_all > 0.0
-        if not np.any(nonzero_mask):
-            raise ValueError('Isotherm data must include at least one positive pressure.')
+        if fill_value is None:
+            # If no fill value is provided, check for extrapolation method
+            if extrap_method == 'linear' and extrap_method is not None:
+                self.extrap_method = 'linear'
+                final_load = self.df[self.loading_key].values[-1]
+                final_pressure = self.df[self.pressure_key].values[-1]
+                second_to_last_load = self.df[self.loading_key].values[-2]
+                second_to_last_pressure = self.df[self.pressure_key].values[-2]
+                slope = ((final_load - second_to_last_load) /
+                         (final_pressure - second_to_last_pressure))
+                next_point = final_load + slope * (extrap_p - final_pressure)
+                new_row = pd.DataFrame({self.pressure_key: [extrap_p],
+                                        self.loading_key: [next_point]})
+                self.df = pd.concat([self.df, new_row], ignore_index=True)
+                self.extrap_points = 1
+            elif extrap_method in ModelIsotherm._MODELS and extrap_method is not None:
+                self.extrap_method = extrap_method
 
-        pressures = pressures_all[nonzero_mask]
-        loadings = loadings_all[nonzero_mask]
+                extrap_isotherm = ModelIsotherm(df=self.df, loading_key=loading_key,
+                                                pressure_key=pressure_key,
+                                                model=extrap_method, **fit_options)
+                iso_load = extrap_isotherm.loading(self.df[self.pressure_key].max())
+                final_load = self.df[self.loading_key].values[-1]
+                extrap_iso_shift = final_load - iso_load
+                extrap_pressures = np.logspace(np.log10(self.df[self.pressure_key]
+                                                    .max()), np.log10(extrap_p),
+                                                num=extrap_points)[1:]
+                extrap_loadings = (extrap_isotherm.loading(extrap_pressures)
+                                    + extrap_iso_shift)
+                extrap_df = pd.DataFrame({pressure_key: extrap_pressures,
+                                            loading_key: extrap_loadings})
+                self.df = pd.concat([self.df, extrap_df], ignore_index=True)
+                self.extrap_points = extrap_points - 1
+
+        pressures = self.df[self.pressure_key].values[
+                    self.df[self.pressure_key].values != 0.0]
+        loadings = self.df[self.loading_key].values[
+                    self.df[self.pressure_key].values != 0.0]
         self.first_pressure = pressures[0]
         self.henry_const = loadings[0] / pressures[0]
+        self.load_pchip = PchipInterpolator(pressures, loadings, extrapolate=False)
 
-        self.pchip = PchipInterpolator(pressures, loadings, extrapolate=False)
+        # Now calculate spreading pressure and p0 ahead of time for speed
+        p_grid = np.logspace(np.log10(pressures[0]), np.log10(pressures[-1]),
+                             grid_points)
+        p_grid[-1] = pressures[-1]  # ensure last point is exactly the max pressure in data
+        loading_grid = [self.loading(p) for p in p_grid]
+        ln_p_grid = np.log(p_grid)
+        spreading_grid = cumulative_trapezoid(loading_grid, ln_p_grid, initial = 0.0)
+        # Build interpolators for spreading pressure and p0
+        self.spread_pchip = PchipInterpolator(p_grid, spreading_grid, extrapolate=False)
+        self.p0_pchip = PchipInterpolator(spreading_grid, p_grid, extrapolate=False)
 
-    def loading(self, pressure: float):
+    def loading(self, pressure):
         """docstring"""
 
-        if ((self.extrap_method is not None)
-            and (pressure > self.df[self.pressure_key].max())):
-            return self.extrap_isotherm.loading(pressure) # type: ignore
+        scalar_input = np.isscalar(pressure)
 
-        # Henry's law behavior
-        if pressure <= self.first_pressure:
-            return self.henry_const * pressure
+        pressure = np.asarray(pressure, dtype=float)
 
-        return self.pchip(pressure)
+        loading = np.empty_like(pressure)
+
+        low = pressure <= self.first_pressure
+        high = ~low
+
+        loading[low] = self.henry_const * pressure[low]
+        loading[high] = self.load_pchip(pressure[high])
+
+        if scalar_input:
+            return float(loading)
+
+        return loading
 
     def spreading_pressure(self, pressure: float):
         """docstring"""
         # throw exception if interpolating outside the range
         max_pressure = self.df[self.pressure_key].max()
-        if ((self.extrap_method is None)
-            and (pressure > max_pressure)):
+        if pressure > max_pressure:
             raise Exception(dedent(f'''
             To compute the spreading pressure at this bulk gas pressure, we would need
             to extrapolate the isotherm since this pressure is outside the range of the
@@ -334,81 +361,25 @@ class PCHIPInterpolatorIsotherm:
             return self.henry_const * pressure
 
         # Otherwise rely on the PCHIP interpolation of the isotherm data
-        integrand = lambda p: self.pchip(p) / p
-        pi, _ = quad(integrand, p0, pressure)
+        return self.henry_const * p0 + self.spread_pchip(pressure)
 
-        return self.henry_const * p0 + pi
+    def pressure(self, target_phi: float):
+        """ One line description
 
-    # def pressure(self, target_phi: float):
-    #     """ One line description
+        Args:
+            param1(type): Description of param1
 
-    #     Args:
-    #         param1(type): Description of param1
+        Returns:
+            type: Description of return value
 
-    #     Returns:
-    #         type: Description of return value
+        """
+        # Enforce Henry's law behavior at low pressures
+        phi_at_p0 = self.henry_const * self.first_pressure
+        if target_phi <= phi_at_p0:
+            return target_phi / self.henry_const
 
-    #     """
-    #     # Get all data points that are at nonzero pressures
-    #     pressures = self.df[self.pressure_key].values[
-    #                 self.df[self.pressure_key].values != 0.0]
-    #     loadings = self.df[self.loading_key].values[
-    #                self.df[self.pressure_key].values != 0.0]
-
-    #     henry_const = loadings[0] / pressures[0]
-
-    #     phi_at_p1 = henry_const * pressures[0]
-    #     if target_phi <= phi_at_p1:
-    #         return target_phi / henry_const
-
-    #     # Accumulate phi segment by segment
-    #     phi = phi_at_p1
-    #     for i in range(len(pressures) - 1):
-    #         slope = (loadings[i+1] - loadings[i]) / (pressures[i+1] - pressures[i])
-    #         intercept = loadings[i] - slope * pressures[i]
-    #         phi_segment = (slope * (pressures[i+1] - pressures[i])
-    #                     + intercept * np.log(pressures[i+1] / pressures[i]))
-    #         phi_next = phi + phi_segment
-
-    #         if target_phi <= phi_next:
-    #             # target is within this segment — brentq over [p_i, p_{i+1}] only
-    #             phi_at_pi = phi
-    #             def residual(p):
-    #                 seg_area = (slope * (p - pressures[i])
-    #                             + intercept * np.log(p / pressures[i]))
-    #                 return phi_at_pi + seg_area - target_phi
-
-    #             return brentq(residual, pressures[i], pressures[i+1])
-
-    #         phi = phi_next
-
-    #     if self.extrap_method == 'Langmuir' and self.extrap_isotherm is not None:
-    #         return self.extrap_isotherm.pressure(target_phi) # type: ignore
-
-    #     if (self.extrap_method in ModelIsotherm._MODELS and
-    #         self.extrap_method is not None):
-    #         # target_phi is beyond the data range, but we have an extrapolation model
-    #         def extrap_residual(p):
-    #             return self.extrap_isotherm.spreading_pressure(p) - target_phi  # type: ignore
-
-    #         lo = pressures[-1]
-    #         f_lo = extrap_residual(lo)
-
-    #         hi = lo * 2.0
-    #         f_hi = extrap_residual(hi)
-
-    #         max_expand = 60
-    #         for _ in range(max_expand):
-    #             if np.sign(f_lo) != np.sign(f_hi) and np.isfinite(f_hi):
-    #                 break
-    #             hi *= 2.0
-    #             f_hi = extrap_residual(hi)
-
-    #         if np.sign(f_lo) == np.sign(f_hi):
-    #             raise ValueError('Could not bracket extrapolated pressure for '
-    #                              'target_phi.')
-
-    #         return brentq(extrap_residual, lo, hi)
+        # Otherwise rely on the PCHIP interpolation of the isotherm data
+        return self.p0_pchip(target_phi)
 
     #     # target_phi is beyond the data range
     #     raise ValueError( #TODO: rewrite this error message

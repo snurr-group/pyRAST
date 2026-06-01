@@ -236,7 +236,7 @@ class ActivityCoefficient:
         self.model_parameters = dict(zip(self.param_names, res))'''
         pass
 
-    def _rigorous_fit_to_gamma(self, max_iter = 100, tol = 1e-4):
+    def _rigorous_fit_to_gamma(self, max_iter = 100, tol = 1e-6):
         """docstring"""
         # First pass for model parameters is use ideal case
         self._fit_to_gamma()
