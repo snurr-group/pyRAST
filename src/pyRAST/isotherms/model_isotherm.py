@@ -10,6 +10,10 @@ import scipy.optimize
 
 
 class ModelIsotherm:
+    """Parent class for all model isotherms.
+
+    Check the __init__ method for details on how to create an instance.
+    """
     # Model list built at import time
     _MODELS = {}
 
@@ -27,7 +31,12 @@ class ModelIsotherm:
     model: str | None = None
 
     def __new__(cls, model: str = '', *args, **kwargs):
-        """docstring"""
+        """Creates an instance of the user-specified model.
+
+        This factory design pattern allows users to follow the syntax of pyIAST while
+        still providing the flexibility to use any isotherm model they choose. Users
+        should never interact with this method directly.
+        """
         if cls is ModelIsotherm:
             if model not in cls._MODELS:
                 raise ValueError(f'{model} is not a valid model. Choose from'
@@ -37,7 +46,11 @@ class ModelIsotherm:
         return super().__new__(cls)
 
     def __init_subclass__(cls, model_name: str = '', *args, **kwargs):
-        """docstring"""
+        """Registers subclasses of ModelIsotherm at import time.
+
+        Users should never interact with this method directly. To modify the list of
+        available models, edit the import statements in __init__.py.
+        """
         super().__init_subclass__(**kwargs)
         if model_name:
             ModelIsotherm._MODELS[model_name] = cls
@@ -46,17 +59,43 @@ class ModelIsotherm:
                  model: str, model_parameters: dict | None = None,
                  param_guess: dict | None = None,
                  param_bounds: dict | None = None,
-                 optimization_options: dict | None = None,
-                 optimization_mode: str = 'default'):
-        """ One line description
+                 optimization_options: dict | None = None):
+        """Initializes instances of analytical model isotherms.
 
         Args:
-            param1(type): Description of param1
+            df(pd.DataFrame): Dataframe containing isotherm data.
+            loading_key(str): Column name in df corresponding to loading data.
+            pressure_key(str): Column name in df corresponding to pressure data.
+            model(str): Name of model to fit.
+            model_parameters(dict, optional): Dictionary of model parameters. If
+                provided, these parameters will be used instead of fitting to data.
+                Keys must match self.param_names.
+            param_guess(dict, optional): Dictionary of initial guess for fitting model
+                parameters. Keys must match self.param_names. Only needed if the default
+                initial guess is not sufficient for fitting.
+            param_bounds(dict, optional): Dictionary of bounds for fitting model
+                parameters. Keys must match self.param_names. Only needed if the default
+                bounds are not sufficient for fitting.
+            optimization_options(dict, optional): Dictionary of options to pass to
+                scipy.optimize.least_squares. Only needed if the default optimization
+                options are not sufficient for fitting.
 
-        Returns:
-            type: Description of return value
+        Raises:
+            ValueError: If model is not valid, loading or pressure keys not in df,
+                model_parameters keys do not match self.param_names, or param_guess keys
+                do not match self.param_names.
 
         """
+
+        # Store model type
+        self.model = model
+
+        # If user provided parameters, check that keys are correct
+        if model_parameters is not None:
+            if set(model_parameters.keys()) != set(self.param_names):
+                raise ValueError(f'model_parameters keys must be {self.param_names}.')
+            self.model_parameters = model_parameters
+            return
 
         # Check for valid inputs
         if loading_key not in df.columns:
@@ -68,9 +107,6 @@ class ModelIsotherm:
         self.df = df
         self.loading_key = loading_key
         self.pressure_key = pressure_key
-
-        # Store model parameters
-        self.model = model
 
         # Set initial guess
         # If user provided, check that keys are correct and enforce bounds
@@ -89,64 +125,31 @@ class ModelIsotherm:
 
         self.param_guess = self.enforce_parameter_bounds(self.param_guess)
         # Fit model to data
-        # If user provided parameters, check that keys are correct
-        if model_parameters is not None:
-            if set(model_parameters.keys()) != set(self.param_names):
-                raise ValueError(f'model_parameters keys must be {self.param_names}.')
-            self.model_parameters = model_parameters
-        else:
-            self.model_parameters = dict.fromkeys(self.param_names, np.nan)
-            self._fit(optimization_options, optimization_mode)
+
+        self.model_parameters = dict.fromkeys(self.param_names, np.nan)
+        self._fit(optimization_options)
 
     def __repr__(self):
         return (f'{self.name} Isotherm with parameters: {self.model_parameters}'
                 f' and guess: {self.param_guess} and RMSE: {self.rmse}')
 
     def loading(self, pressure):
-        """ One line description
-
-        Args:
-            param1(type): Description of param1
-
-        Returns:
-            type: Description of return value
-
-        """
+        """Returns loading at given pressure if implemented by subclass."""
         raise NotImplementedError('loading method not implemented for this model.')
 
     def spreading_pressure(self, pressure):
-        """ One line description
-
-        Args:
-            param1(type): Description of param1
-
-        Returns:
-            type: Description of return value
-
-        """
+        """Returns spreading pressure at given pressure if implemented by subclass."""
         raise NotImplementedError('spreading_pressure method not implemented.')
 
     def pressure(self, target_phi):
-        """ One line description
-
-        Args:
-            param1(type): Description of param1
-
-        Returns:
-            type: Description of return value
-
-        """
+        """Returns p0 at given spreading pressure if implemented by subclass."""
         raise NotImplementedError('pressure method not implemented.')
 
     def initial_guess(self):
-        """ One line description
+        """Returns initial guess for model parameters.
 
-        Args:
-            param1(type): Description of param1
-
-        Returns:
-            type: Description of return value
-
+        The default implementation provides a guess for the Langmuir model. Subclasses
+        use this default guess as a starting point for their own initial guesses.
         """
         loading = self.df[self.loading_key].to_numpy()
         pressure = self.df[self.pressure_key].to_numpy()
@@ -163,14 +166,13 @@ class ModelIsotherm:
         return {'M': m_guess, 'K': k_guess}
 
     def enforce_parameter_bounds(self, guess):
-        """ One line description
+        """Enforces parameter bounds on the initial guess.
 
         Args:
-            param1(type): Description of param1
+            guess (dict): Initial guess for model parameters.
 
         Returns:
-            type: Description of return value
-
+            dict: Guess with parameters enforced within bounds.
         """
         for param, value in guess.items():
             bounds = self.param_bounds[param]
@@ -180,17 +182,15 @@ class ModelIsotherm:
                 guess[param] = bounds[1]
         return guess
 
-    def _fit(self, optimization_options: dict | None = None,
-             optimization_mode: str = 'default'):
-        """ One line description
+    def _fit(self, optimization_options: dict | None = None):
+        """Fits the model to the data. Assigns parameters and RMSE.
 
         Args:
-            param1(type): Description of param1
-
-        Returns:
-            type: Description of return value
-
+            optimization_options (dict, optional): User-specified options for the
+                least squares optimization. See scipy.optimize.least_squares for
+                parameter options.
         """
+        # Extract loading and pressure data as numpy arrays for easier manipulation
         loading = self.df[self.loading_key].to_numpy()
         pressure = self.df[self.pressure_key].to_numpy()
 
@@ -199,13 +199,13 @@ class ModelIsotherm:
         loading = loading[mask]
         pressure = pressure[mask]
 
+        # Set up optimization problem with initial guess, bounds, and loading residual
         guess = np.array(list(self.param_guess.values()))
         bounds = [[self.param_bounds[param][0] for param in self.param_names],
                   [self.param_bounds[param][1] for param in self.param_names]]
-        def residuals(params_):
-            # change params to those in x
+        def residuals(x):
             for i in range(len(self.param_names)):
-                self.model_parameters[self.param_names[i]] = params_[i]
+                self.model_parameters[self.param_names[i]] = x[i]
 
             return loading - self.loading(pressure)
 
@@ -216,28 +216,19 @@ class ModelIsotherm:
             'bounds': bounds,
         }
 
-        # Update inputs based on optimization mode
-        if optimization_mode == 'enhanced':
-            enhanced_options = {
-                'max_nfev': 2000,
-            }
-            fitting_inputs.update(enhanced_options)
-
         # Update if user provided optimization options
         if optimization_options is not None:
             fitting_inputs.update(optimization_options)
 
         # Perform fitting
-        try:
-            result = scipy.optimize.least_squares(**fitting_inputs)
-        except ValueError as e:
-            raise ValueError(f'Fitting failed with error: {e}')
+        result = scipy.optimize.least_squares(**fitting_inputs)
 
         if not result.success:
-            print(f'Attempted fitting with guess: {self.param_guess}'
-                  f' and bounds: {bounds}')
-            raise RuntimeError(f'Fitting failed with message: {result.message}'
-                               f' Try providing a different initial guess or bounds.')
+            print(result.message)
+            print(f'pyRAST attempted fitting with guess: {guess} and bounds: {bounds}')
+            raise RuntimeError(f'''Fitting failed for {self.model} isotherm. Try
+            providing a different initial guess by passing param_guess to the
+            constructor, or providing different bounds.''')
 
         # Store results
         self.model_parameters = dict(zip(self.param_names, result.x))

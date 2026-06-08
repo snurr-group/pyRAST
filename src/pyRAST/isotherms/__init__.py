@@ -4,8 +4,7 @@
 from .bet import BET
 from .dslangmuir import DSLangmuir
 from .henry import Henry
-from .interpolator_isotherm import InterpolatorIsotherm
-from .interpolator_isotherm import PCHIPInterpolatorIsotherm
+from .interpolator_isotherm import CubicIsotherm, InterpolatorIsotherm
 from .langmuir import Langmuir
 from .model_isotherm import ModelIsotherm
 from .quadratic import Quadratic
