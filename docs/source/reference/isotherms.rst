@@ -7,7 +7,7 @@ Interpolator Isotherms
 .. autoclass:: pyrast.isotherms.InterpolatorIsotherm
    :members:
 
-.. autoclass:: pyrast.isotherms.PCHIPInterpolatorIsotherm
+.. autoclass:: pyrast.isotherms.CubicIsotherm
    :members:
 
 Analytical Isotherms

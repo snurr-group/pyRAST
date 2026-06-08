@@ -1,11 +1,3 @@
-import sys
-from pathlib import Path
-
-# Points to the directory containing your package relative to conf.py
-# path = Path('../../src/')
-# print(f"Adding {Path.resolve(path).as_posix()} to sys.path for autodoc")
-# sys.path.insert(0, Path.resolve(path).as_posix())
-
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
@@ -30,7 +22,10 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = []
-
+autodoc_default_options = {
+    'members': True,
+    'special-members': '__init__',
+}
 
 
 # -- Options for HTML output -------------------------------------------------

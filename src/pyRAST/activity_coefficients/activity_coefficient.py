@@ -137,7 +137,7 @@ class ActivityCoefficient:
 
         def residuals(phi, q_excess = 0.0):
             for i in range(len(self.isotherms)):
-                p0[i] = self.isotherms[i].pressure(phi)
+                p0[i] = self.isotherms[i].p0(phi)
             q0 = np.array([self.isotherms[i].loading(p0[i])
                            for i in range(len(self.isotherms))])
             # We make an assumption of ideality here, may need to change later
@@ -197,7 +197,7 @@ class ActivityCoefficient:
         phi_sol = cast('float', brentq(residuals, phi_low, phi_high))
 
         for i in range(len(self.isotherms)):
-            p0[i] = self.isotherms[i].pressure(phi_sol)
+            p0[i] = self.isotherms[i].p0(phi_sol)
         gamma = (y * total_f) / (p0 * x)
         if not excess_loading:
             return gamma, phi_sol
@@ -212,7 +212,7 @@ class ActivityCoefficient:
             phi_sol = cast('float', brentq(residuals,
                                            phi_low, phi_high, args=(q_excess,)))
             for i in range(len(self.isotherms)):
-                p0[i] = self.isotherms[i].pressure(phi_sol)
+                p0[i] = self.isotherms[i].p0(phi_sol)
             gamma = (y * total_f) / (p0 * x)
 
             if np.all(np.abs(gamma - gamma_old) < tol):

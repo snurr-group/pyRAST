@@ -1,7 +1,4 @@
-"""
-functions of model isotherm parent class go here
-
-"""
+"""Base class for analytical model isotherms."""
 # ruff: noqa: TC002
 
 import numpy as np
@@ -104,7 +101,7 @@ class ModelIsotherm:
             raise ValueError(f'Pressure key {pressure_key} not found.')
 
         # Store dataframe and keys
-        self.df = df
+        self.df = df.sort_values(by=pressure_key, ascending=True)
         self.loading_key = loading_key
         self.pressure_key = pressure_key
 
@@ -131,7 +128,7 @@ class ModelIsotherm:
 
     def __repr__(self):
         return (f'{self.name} Isotherm with parameters: {self.model_parameters}'
-                f' and guess: {self.param_guess} and RMSE: {self.rmse}')
+                f', guess: {self.param_guess}, and RMSE: {self.rmse}')
 
     def loading(self, pressure):
         """Returns loading at given pressure if implemented by subclass."""
@@ -141,9 +138,9 @@ class ModelIsotherm:
         """Returns spreading pressure at given pressure if implemented by subclass."""
         raise NotImplementedError('spreading_pressure method not implemented.')
 
-    def pressure(self, target_phi):
+    def p0(self, target_phi):
         """Returns p0 at given spreading pressure if implemented by subclass."""
-        raise NotImplementedError('pressure method not implemented.')
+        raise NotImplementedError('p0 method not implemented.')
 
     def initial_guess(self):
         """Returns initial guess for model parameters.

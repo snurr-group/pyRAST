@@ -22,7 +22,7 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
         return (self.model_parameters['M'] *
                 np.log(1.0 + self.model_parameters['K'] * pressure))
 
-    def pressure(self, target_phi: float):
+    def p0(self, target_phi: float):
         m = self.model_parameters['M']
         k = self.model_parameters['K']
         if m <= 0 or k <= 0:
