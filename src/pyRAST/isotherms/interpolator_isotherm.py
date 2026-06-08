@@ -1,8 +1,4 @@
-# ruff: noqa: BLE001
-"""
-functions of model isotherm parent class go here
-
-"""
+"""Interpolators for isotherm data."""
 
 from textwrap import dedent
 
@@ -16,7 +12,7 @@ from pyrast.isotherms.model_isotherm import ModelIsotherm
 
 
 class InterpolatorIsotherm:
-    """docstring"""
+    """Interpolates isotherm with linear interpolation."""
     # Instance variables
     df: pd.DataFrame
     loading_key: str
@@ -29,18 +25,59 @@ class InterpolatorIsotherm:
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
                  fill_value: float | None = None, extrap_method: str | None = None,
                  extrap_p: float = 1e20, extrap_points: int = 100, **fit_options):
-        """docstring"""
+        """Initializes InterpolatorIsotherm utilizing linear interpolator.
+
+        This class uses the scipy.interpolate.interp1d, which is a linear interpolation
+        method. Extrapolation can be done with a fill value, linear fit to the last two
+        points, or with an analytical model fit to the data. Extrapolation can be
+        dangerous but might be necessary for calculations at high bulk pressures. See
+        the paper discussion for guidance on extrapolation.
+
+        Extrapolation is handled by adding extrapolated points to the original data and
+        shifting the loading to ensure a continuous isotherm. The original dataframe is
+        preserved for plotting while the extrapolation is saved in the interpolators.
+
+        Args:
+            df(pd.DataFrame): Dataframe containing isotherm data.
+            loading_key(str): Column name in df corresponding to loading data.
+            pressure_key(str): Column name in df corresponding to pressure data.
+            fill_value(float, optional): If provided, this value is used as the loading
+                beyond the highest pressure in the data.
+            grid_points(int, optional): Number of points to use in the spreading
+                pressure and p0 interpolation grids. Default is 200, which provides a
+                smooth isotherm in most cases.
+            extrap_method(str, optional): Method to extrapolate isotherm beyond max
+                pressure. Choose from 'linear' or any implemented analytical model.
+            extrap_p(float, optional): Pressure up to which to extrapolate the isotherm
+                if extrap_method is not None.
+            extrap_points(int, optional): Number of points to use in extrapolation if
+                extrap_method is not None. Default is 100, which provides a smooth
+                extrapolation in most cases.
+            fit_options: Additional keyword arguments to pass to the fit of the
+                analytical extrapolation model if desired. Follows syntax of
+                optimization_options in ModelIsotherm.
+
+        Raises:
+            ValueError: If loading_key or pressure_key are not in df or if extrap_method
+                is not recognized.
+        """
 
         # If pressure = 0 not in data frame, add it for interpolation purposes
         if 0.0 not in df[pressure_key].values:
             df = pd.concat([pd.DataFrame({pressure_key: 0.0, loading_key: 0.0},
                                          index=[0]), df])
 
+        # Check for valid inputs
+        if None in [loading_key, pressure_key]:
+            raise ValueError('loading_key and pressure_key must be provided.')
+        if loading_key not in df.columns:
+            raise ValueError(f'Loading key {loading_key} not found.')
+        if pressure_key not in df.columns:
+            raise ValueError(f'Pressure key {pressure_key} not found.')
+
         # Store isotherm data in self
         df = df.sort_values(by=pressure_key, ascending=True)
         self.df = df.copy()
-        if None in [loading_key, pressure_key]:
-            raise ValueError('loading_key and pressure_key must be provided.')
         self.loading_key = loading_key
         self.pressure_key = pressure_key
         if extrap_method == 'Linear':
@@ -64,13 +101,34 @@ class InterpolatorIsotherm:
             self.fill_value = fill_value
 
     def loading(self, pressure: float):
-        """docstring"""
+        """Loading at given pressure with interp1d."""
 
         # Henry's law behavior is enforced as interpolator is linear
         return self.interp1d(pressure)
 
     def spreading_pressure(self, pressure: float):
-        """docstring"""
+        """Calculates reduced spreading pressure at a bulk gas pressure P.
+
+        Use numerical quadrature on isotherm data points to compute the reduced
+        spreading pressure via the integral:
+
+        .. math::
+
+            \\Pi(p) = \\int_0^p \\frac{q(\\hat{p})}{ \\hat{p}} d\\hat{p}.
+
+        In this integral, the isotherm :math:`q(\\hat{p})` is represented by a
+        linear interpolation of the data.
+
+        See C. Simon, B. Smit, M. Haranczyk. pyIAST: Ideal Adsorbed Solution
+        Theory (IAST) Python Package. Computer Physics Communications.
+
+        Args:
+            pressure(float): Pressure at which to calculate spreading pressure.
+        Returns:
+            float: Spreading pressure at given pressure.
+        Raises:
+            RuntimeError: if extrapolation is required.
+        """
         # Set max pressure to maximum pressure in df or extrapolation end
         if self.extrap_method is None:
             max_pressure = self.df[self.pressure_key].max()
@@ -101,7 +159,7 @@ class InterpolatorIsotherm:
                 object using 'extrap_method'. Then, InterpolatorIsotherm will fit a line
                 to the last two points in your data and use this line to extrapolate the
                 isotherm beyond the highest pressure in your data.
-            Option 3: Go back to the lab or computer to collect isotherm data
+            Option 5: Go back to the lab or computer to collect isotherm data
                 at higher pressures. (Extrapolation can be dangerous!)
             '''))
 
@@ -148,14 +206,12 @@ class InterpolatorIsotherm:
         return area
 
     def p0(self, target_phi: float):
-        """ One line description
-
-        Args:
-            param1(type): Description of param1
+        """Interpolates p0 at given spreading pressure with Henry's law enforced.
 
         Returns:
-            type: Description of return value
-
+            float: p0 at given spreading pressure
+        Raises:
+            RuntimeError if extrapolation is required.
         """
         # Get all data points that are at nonzero pressures
         pressures = self.df[self.pressure_key].values[
@@ -191,10 +247,31 @@ class InterpolatorIsotherm:
             phi = phi_next
 
         # target_phi is beyond the data range
-        raise RuntimeError( #TODO: rewrite this error message
-            f'target_phi={target_phi:.4f} exceeds Φ at max pressure '
-            f'({phi:.4f}). Extrapolation required.',
-        )
+        raise RuntimeError(dedent('''
+            To compute p0 at this spreading pressure, we would need to extrapolate the
+            isotherm since this spreading pressure is outside the range of the maximum
+            spreading pressure in your pure-component isotherm data.
+
+            At present, your InterpolatorIsotherm object is set to throw an exception
+            when this occurs, as we do not have data outside this pressure range to
+            characterize the isotherm at higher pressures.
+
+            If you have extrapolation enabled but are still seeing this error, increase
+            the extrapolation pressure 'extrap_p' in the constructor of your
+            InterpolatorIsotherm object.
+
+            Option 1: use an analytical model instead of interpolation.
+            Option 2: pass an analytical model to the construction of the
+                InterpolatorIsotherm object using 'extrap_method'. Then,
+                InterpolatorIsotherm will use the analytical model to extrapolate the
+                isotherm beyond the highest pressure in your data.
+            Option 3: pass 'linear' to the construction of the InterpolatorIsotherm
+                object using 'extrap_method'. Then, InterpolatorIsotherm will fit a line
+                to the last two points in your data and use this line to extrapolate the
+                isotherm beyond the highest pressure in your data.
+            Option 4: Go back to the lab or computer to collect isotherm data
+                at higher pressures. (Extrapolation can be dangerous!)
+            '''))
 
 
 class CubicIsotherm:
@@ -232,7 +309,7 @@ class CubicIsotherm:
         If your data is very noisy, this might result in a sparse isotherm. In this
         case, you can disable this feature or consider fitting an analytical model.
 
-        Extrapolation is handled by adding extrapolate points to the original data and
+        Extrapolation is handled by adding extrapolated points to the original data and
         shifting the loading to ensure a continuous isotherm. The original dataframe is
         preserved for plotting while the extrapolation is saved in the interpolators.
 
