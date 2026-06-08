@@ -8,7 +8,7 @@
    version="1.1"
    id="svg1"
    inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
-   sodipodi:docname="logo.svg"
+   sodipodi:docname="logo_white.svg"
    inkscape:export-filename="pyrast_logo.pdf"
    inkscape:export-xdpi="83.838623"
    inkscape:export-ydpi="83.838623"
@@ -27,15 +27,15 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="px"
      showgrid="false"
-     inkscape:zoom="0.8511655"
-     inkscape:cx="224.39819"
-     inkscape:cy="246.72053"
+     inkscape:zoom="0.93878715"
+     inkscape:cx="244.99696"
+     inkscape:cy="252.45339"
      inkscape:window-width="1433"
      inkscape:window-height="767"
      inkscape:window-x="0"
      inkscape:window-y="30"
      inkscape:window-maximized="0"
-     inkscape:current-layer="layer3">
+     inkscape:current-layer="layer1">
     <inkscape:grid
        id="grid27"
        units="px"
@@ -148,13 +148,13 @@
        inkscape:collect="always"
        style="color-interpolation-filters:sRGB"
        id="filter45"
-       x="-0.077001365"
-       y="-0.077001365"
-       width="1.1540027"
-       height="1.1540027">
+       x="-0.056124841"
+       y="-0.056124841"
+       width="1.1122497"
+       height="1.1122497">
       <feGaussianBlur
          inkscape:collect="always"
-         stdDeviation="15.466284"
+         stdDeviation="11.04715"
          id="feGaussianBlur45" />
     </filter>
   </defs>
@@ -163,7 +163,7 @@
      inkscape:groupmode="layer"
      id="layer1">
     <rect
-       style="opacity:0.545455;fill:none;fill-opacity:1;stroke:#000000;stroke-width:4;stroke-linejoin:round;stroke-dasharray:none;paint-order:normal;stroke-opacity:1"
+       style="opacity:0.70100503;fill:none;fill-opacity:1;stroke:#000000;stroke-width:4;stroke-linejoin:round;stroke-dasharray:none;paint-order:normal;stroke-opacity:1"
        id="rect11-2"
        width="508.03101"
        height="508.03101"
@@ -172,7 +172,7 @@
        ry="36.272984"
        rx="0" />
     <rect
-       style="opacity:0.545455;fill:none;fill-opacity:1;stroke:#000000;stroke-width:4;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1;paint-order:normal;filter:url(#filter45)"
+       style="opacity:0.25628141;fill:none;fill-opacity:1;stroke:#000000;stroke-width:4;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1;paint-order:normal;filter:url(#filter45)"
        id="rect11-2-3"
        width="508.03101"
        height="508.03101"

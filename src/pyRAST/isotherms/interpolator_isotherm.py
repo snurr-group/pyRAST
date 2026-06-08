@@ -53,8 +53,8 @@ class InterpolatorIsotherm:
             extrap_points(int, optional): Number of points to use in extrapolation if
                 extrap_method is not None. Default is 100, which provides a smooth
                 extrapolation in most cases.
-            fit_options: Additional keyword arguments to pass to the fit of the
-                analytical extrapolation model if desired. Follows syntax of
+            fit_options(optional): Additional keyword arguments to pass to the fit of
+                the analytical extrapolation model if desired. Follows syntax of
                 optimization_options in ModelIsotherm.
 
         Raises:
@@ -329,8 +329,8 @@ class CubicIsotherm:
             extrap_points(int, optional): Number of points to use in extrapolation if
                 extrap_method is not None. Default is 100, which provides a smooth
                 extrapolation in most cases.
-            fit_options: Additional keyword arguments to pass to the fit of the
-                analytical extrapolation model if desired. Follows syntax of
+            fit_options(optional): Additional keyword arguments to pass to the fit of
+                the analytical extrapolation model if desired. Follows syntax of
                 optimization_options in ModelIsotherm.
 
         Raises:

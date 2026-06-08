@@ -4,10 +4,9 @@ Isotherms
 
 Interpolator Isotherms
 ======================
-.. autoclass:: pyrast.isotherms.InterpolatorIsotherm
-   :members:
-
 .. autoclass:: pyrast.isotherms.CubicIsotherm
+   :members:
+.. autoclass:: pyrast.isotherms.InterpolatorIsotherm
    :members:
 
 Analytical Isotherms
