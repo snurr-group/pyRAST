@@ -3,7 +3,7 @@
 
 import numpy as np
 import pandas as pd
-import scipy.optimize
+from scipy.optimize import brentq, least_squares
 
 
 class ModelIsotherm:
@@ -139,8 +139,17 @@ class ModelIsotherm:
         raise NotImplementedError('spreading_pressure method not implemented.')
 
     def p0(self, target_phi):
-        """Returns p0 at given spreading pressure if implemented by subclass."""
-        raise NotImplementedError('p0 method not implemented.')
+        """Returns p0 at given spreading pressure if not implemented by subclass.
+
+        This method works for any model without a closed form solution for p0 by using
+        root finding. Root finding will be slower than a closed form solution.
+        """
+        p_lo = 1e-20
+        p_hi = max(self.df[self.pressure_key])
+
+        while self.spreading_pressure(p_hi) < target_phi:
+            p_hi *= 10
+        return brentq(lambda p: self.spreading_pressure(p) - target_phi, p_lo, p_hi)
 
     def initial_guess(self):
         """Returns initial guess for model parameters.
@@ -218,7 +227,7 @@ class ModelIsotherm:
             fitting_inputs.update(optimization_options)
 
         # Perform fitting
-        result = scipy.optimize.least_squares(**fitting_inputs)
+        result = least_squares(**fitting_inputs)
 
         if not result.success:
             print(result.message)
