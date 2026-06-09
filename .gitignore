@@ -284,5 +284,4 @@ MobileBackups.trash
 tmbootpicker.efi
 
 tests/
-pyiast_iast.py
 pyiast_isotherms.py

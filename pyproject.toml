@@ -59,7 +59,7 @@ extend-select = [
     "N",        # enforce naming conventions, e.g. ClassName vs function_name
     "A",        # detect shadowed builtins
     "BLE",      # disallow catch-all exceptions
-    "S",        # disallow things like "exec"; also restricts "assert" but I just NOQA it when I really need it
+    "S",        # disallow things like "exec"
 ]
 
 [tool.ruff.format]
