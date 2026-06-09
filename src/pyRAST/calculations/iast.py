@@ -1,16 +1,42 @@
-"""
-IAST calculation module
-"""
+"""IAST calculation module."""
 from textwrap import dedent
 
 import numpy as np
 import scipy.optimize
 
 
-def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
+def iast(partial_pressures, isotherms, *, verbose = False, warningoff = False,
          adsorbed_mole_fraction_guess = None):
-    """
-    docstring
+    """Performs forward IAST calculation to predict mixture adsorption.
+
+    The IAST calculation is performed by solving for the adsorbed phase mole fractions
+    that satisfy the IAST equations. The root finding is started from an initial guess
+    of the pure component loadings at the given partial pressures. The IAST equations
+    are solved in an unconstrained space using the softmax transformation to ensure
+    valid mole fractions. The final loadings of each component are calculated from the
+    solved mole fractions.
+
+    Args:
+        partial_pressures (list or np.ndarray): list of partial pressures of each
+            component in the gas phase. Length must match number of isotherms.
+        isotherms (list of analytical or interpolator isotherms): list of isotherm
+            objects for each component. Length must match length of partial_pressures.
+        verbose (bool, optional): If True, prints detailed information about the IAST
+            calculation.
+        warningoff (bool, optional): If True, suppresses warnings about extrapolation
+            of isotherm data.
+        adsorbed_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
+            adsorbed phase mole fractions. Length must match number of components. If
+            not provided, defaults to pure-component loadings at the given partial
+            pressures.
+    Returns:
+        np.ndarray: Loadings of each component in the adsorbed phase.
+    Raises:
+        ValueError: If number of isotherms does not match length of partial_pressures,
+            if less than 2 isotherms are provided, if solved adsorbed mole
+            fractions are not in [0,1].
+        RuntimeError: If root finding for adsorbed phase mole fractions fails to
+            converge.
     """
     partial_pressures = np.asarray(partial_pressures)
     n_components = len(isotherms)
@@ -29,27 +55,20 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
 
     # Softmax function to make solving more robust
     def _softmax(u):
+        """Softmax transformation for mole fractions."""
         u = u - np.max(u)
         exp_u = np.exp(u)
         return exp_u / np.sum(exp_u)
 
     # Assert that the spreading pressures of each component are equal
     def spreading_pressure_differences(u_free):
-        """docstring"""
+        """IAST equations to solve for adsorbed mole fractions.
+
+        The residual is calculated as spreading pressure differences between each
+        component in the mixture.
+        """
         u_full = np.concatenate((u_free, [0.0]))
         adsorbed_mole_fractions = _softmax(u_full)
-        # diff = np.zeros((n_components - 1,))
-        # for i in range(n_components - 1):
-        #     if i == n_components - 2:
-        #         # automatically assert \sum z_i = 1
-        #         ads_mol_frac2 = 1.0 - np.sum(adsorbed_mole_fractions)
-        #     else:
-        #         ads_mol_frac2 = adsorbed_mole_fractions[i + 1]
-        #     sp1 = isotherms[i].spreading_pressure(partial_pressures[i] /
-        #                                           adsorbed_mole_fractions[i])
-        #     sp2 = isotherms[i + 1].spreading_pressure(partial_pressures[i + 1] /
-        #                                               ads_mol_frac2)
-        #     diff[i] = sp1 - sp2
 
         diff = np.zeros(n_components - 1)
         for i in range(n_components - 1):
@@ -75,12 +94,11 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
         # if list convert to numpy array
         adsorbed_mole_fraction_guess = np.asarray(adsorbed_mole_fraction_guess)
 
+    # Transform initial guess to unconstrained space for root finding
     u_guess = np.log(adsorbed_mole_fraction_guess[:-1] / \
                      adsorbed_mole_fraction_guess[-1])
 
-    res = scipy.optimize.root(spreading_pressure_differences,
-                              u_guess,
-                              method='lm')
+    res = scipy.optimize.root(spreading_pressure_differences, u_guess, method='lm')
 
     if not res.success:
         print(res.message)
@@ -91,12 +109,9 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
                         mole fractions by passing an array adsorbed_mole_fraction_guess
                         '''))
 
+    # Transform solved variables back to mole fractions
     u_sol = res.x
     adsorbed_mole_fractions = _softmax(np.concatenate((u_sol, [0.0])))
-
-    # # Concatenate mole fraction of last component
-    # adsorbed_mole_fractions = np.concatenate((adsorbed_mole_fractions,
-    #                                          [1.0 - np.sum(adsorbed_mole_fractions)]))
 
     if np.any((adsorbed_mole_fractions < 0.0) | (adsorbed_mole_fractions > 1.0)):
         raise ValueError(dedent('''\
@@ -141,9 +156,39 @@ def iast(partial_pressures, isotherms, *, verbose=False, warningoff=False,
     # return loadings [component 1, component 2, ...]. same units as in data
     return loadings
 
-def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *, verbose=False,
-                 warningoff=False, gas_mole_fraction_guess=None):
-    """docstring"""
+def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *, verbose = False,
+                 warningoff = False, gas_mole_fraction_guess = None):
+    """Performs reverse IAST calculation to predict gas phase of adsorbed solution.
+
+    The IAST calculation is performed by solving for the gas phase mole fractions
+    that satisfy the IAST equations. The root finding is started from an initial guess
+    of the desired adsorbed mole fractions. The IAST equations are solved in an
+    unconstrained space using the softmax transformation to ensure valid mole fractions.
+    The final loadings of each component are calculated from the solved mole fractions.
+
+    Args:
+        adsorbed_mole_fractions (list or np.ndarray): list of adsorbed mole fractions of
+            each component in the adsorbed phase. Length must match number of isotherms.
+        total_pressure (float): Total pressure of the gas phase.
+        isotherms (list of analytical or interpolator isotherms): list of isotherm
+            objects for each component. Length must match length of partial_pressures.
+        verbose (bool, optional): If True, prints detailed information about the IAST
+            calculation.
+        warningoff (bool, optional): If True, suppresses warnings about extrapolation
+            of isotherm data.
+        gas_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
+            gas phase mole fractions. Length must match number of components. If
+            not provided, defaults to the adsorbed mole fractions.
+    Returns:
+        np.ndarray: Gas phase mole fractions of each component.
+        np.ndarray: Loadings of each component in the adsorbed phase.
+    Raises:
+        ValueError: If less than 2 isotherms are provided, if length of adsorbed mole
+         fractions does not match number of isotherms, if adsorbed mole fractions do not
+         sum to 1.0, if solved gas phase mole fractions are not in [0,1].
+        RuntimeError: If root finding for gas phase mole fractions fails to
+            converge.
+    """
     n_components = len(isotherms)
     adsorbed_mole_fractions = np.asarray(adsorbed_mole_fractions)
     if n_components <= 1:
@@ -164,22 +209,30 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *, verbose=
             print(f'Desired adsorbed mole fraction of component {i} = '
                   f'{adsorbed_mole_fractions[i]}')
 
-    # assert that the spreading pressures of each component are equal
-    def spreading_pressure_differences(gas_mole_fractions):
-        """docstring"""
+    # Softmax function to make solving more robust
+    def _softmax(u):
+        """Softmax transformation for mole fractions."""
+        u = u - np.max(u)
+        exp_u = np.exp(u)
+        return exp_u / np.sum(exp_u)
+
+    # Assert that the spreading pressures of each component are equal
+    def spreading_pressure_differences(u_free):
+        """IAST equations to solve for adsorbed mole fractions.
+
+        The residual is calculated as spreading pressure differences between each
+        component in the mixture.
+        """
+        u_full = np.concatenate((u_free, [0.0]))
+        gas_mole_fractions = _softmax(u_full)
+
         diff = np.zeros((n_components - 1, ))
         for i in range(n_components - 1):
-            if i == n_components - 2:
-                # automatically assert \sum y_i = 1
-                gas_mole_fraction_n = 1.0 - np.sum(gas_mole_fractions)
-            else:
-                gas_mole_fraction_n = gas_mole_fractions[i + 1]
+            sp1 = isotherms[i].spreading_pressure(total_pressure * \
+                            gas_mole_fractions[i] / adsorbed_mole_fractions[i])
 
-            sp1 = isotherms[i].spreading_pressure(
-                total_pressure * gas_mole_fractions[i] / adsorbed_mole_fractions[i])
-
-            sp2 = isotherms[i + 1].spreading_pressure(
-                total_pressure * gas_mole_fraction_n / adsorbed_mole_fractions[i + 1])
+            sp2 = isotherms[i + 1].spreading_pressure(total_pressure * \
+                            gas_mole_fractions[i+1] / adsorbed_mole_fractions[i + 1])
             diff[i] = sp1 - sp2
 
         return diff
@@ -192,23 +245,22 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *, verbose=
         np.testing.assert_almost_equal(1.0, np.sum(gas_mole_fraction_guess), decimal=4)
         gas_mole_fraction_guess = np.asarray(gas_mole_fraction_guess)
 
-    res = scipy.optimize.root(spreading_pressure_differences,
-                              gas_mole_fraction_guess[:-1],
-                              method='lm')
+    # Transform initial guess to unconstrained space for root finding
+    u_guess = np.log(gas_mole_fraction_guess[:-1] / gas_mole_fraction_guess[-1])
+
+    res = scipy.optimize.root(spreading_pressure_differences, u_guess, method='lm')
 
     if not res.success:
         print(res.message)
         raise RuntimeError(dedent('''\
                 Root finding for gas phase mole fractions failed. This is likely
-                because the default guess in pyRAST is not good enough. Try a
+                because the default guess is not good enough. Try a
                 different starting guess for the gas phase mole fractions by
                 passing an array or list gas_mole_fraction_guess to this function.'''))
 
-    gas_mole_fractions = res.x
-
-    # concatenate mole fraction of last component
-    gas_mole_fractions = np.concatenate((gas_mole_fractions,
-                                         np.array([1.0 - np.sum(gas_mole_fractions)])))
+    # Transform solved variables back to mole fractions
+    u_sol = res.x
+    gas_mole_fractions = _softmax(np.concatenate((u_sol, [0.0])))
 
     if np.any((gas_mole_fractions < 0.0) | (gas_mole_fractions > 1.0)):
         raise ValueError(dedent('''\

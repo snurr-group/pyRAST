@@ -1,23 +1,62 @@
-"""
-RAST calculation module
-"""
+# ruff: noqa: TC001
+"""RAST calculation module."""
 from textwrap import dedent
 
 import numpy as np
 import scipy.optimize
 
+from pyrast.activity_coefficients import ActivityCoefficient
 
-def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
-         warningoff=False, adsorbed_mole_fraction_guess = None):
-    """
-    docstring
+
+def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient, *,
+         verbose = False, warningoff = False, adsorbed_mole_fraction_guess = None,
+         phi_guess: float = 1.0):
+    """Performs forward RAST calculation to predict mixture adsorption.
+
+    The RAST calculation is performed by solving for the adsorbed phase mole fractions
+    and spreading pressure that satisfy the RAST equations. The root finding is started
+    from an initial guess of the pure component loadings at the given partial pressures.
+    The RAST equations are solved in an unconstrained space using softmax and softplus
+    transformations to ensure valid mole fractions and spreading pressures. The final
+    loadings of each component are calculated from the solved mole fractions and
+    spreading pressure.
+
+    See documentation on activity coefficient models to understand how to use
+    activity coefficients in RAST calculations.
+
+    Args:
+        partial_pressures (list or np.ndarray): list of partial pressures of each
+            component in the gas phase. Length must match number of isotherms.
+        isotherms (list of analytical or interpolator isotherms): list of isotherm
+            objects for each component. Length must match length of partial_pressures.
+        activity_coefficient (ActivityCoefficient): Fitted ActivityCoefficient model for
+            the binary mixture.
+        verbose (bool, optional): If True, prints detailed information about the RAST
+            calculation.
+        warningoff (bool, optional): If True, suppresses warnings about extrapolation
+            of isotherm data.
+        adsorbed_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
+            adsorbed phase mole fractions. Length must match number of components. If
+            not provided, defaults to pure-component loadings at the given partial
+            pressures.
+        phi_guess (float, optional): Initial guess for spreading pressure. Default is
+            1.0. This is used in the root finding for the RAST equations and can be
+            adjusted if the default guess does not lead to convergence.
+    Returns:
+        np.ndarray: Loadings of each component in the adsorbed phase.
+    Raises:
+        ValueError: If number of isotherms does not match length of partial_pressures,
+            if more or less than 2 isotherms are provided, if solved adsorbed mole
+            fractions are not in [0,1].
+        RuntimeError: If root finding for adsorbed phase mole fractions fails to
+            converge.
     """
     partial_pressures = np.asarray(partial_pressures)
     n_components = len(isotherms)
 
     # Validate inputs
-    if n_components <= 1:
-        raise ValueError('At least two isotherms are required for RAST calculations.')
+    if n_components != 2:
+        raise ValueError('Exactly two isotherms are required for RAST calculations.')
     if len(partial_pressures) != n_components:
         raise ValueError('Length of partial_pressures must match number of isotherms.')
 
@@ -28,29 +67,21 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
                   f' Isotherm Model = {type(isotherms[i]).__name__}')
 
     def _softmax(u):
-        """docstring"""
+        """Softmax transformation for mole fractions."""
         u = u - np.max(u)  # for numerical stability
         exp_u = np.exp(u)
         return exp_u / np.sum(exp_u)
 
     def _softplus(s):
-        """docstring"""
+        """Softplus transformation for spreading pressure."""
         return np.log1p(np.exp(-np.abs(s))) + np.maximum(s, 0)
 
     def rast_equations(var):
-        """docstring"""
-        # x = np.zeros(n_components)
-        # x[:-1] = var[:-1]
-        # x[-1] = 1.0 - np.sum(x[:-1])
-        # phi = var[-1]
-        # residuals = np.zeros(n_components)
+        """RAST equations to solve for adsorbed mole fractions and spreading pressure.
 
-        # gamma = activity_coefficient.gamma(x, phi)
-        # for i in range(n_components):
-        #     p0 = partial_pressures[i] / x[i] / gamma[i]
-        #     sp = isotherms[i].spreading_pressure(p0)
-        #     residuals[i] = phi - sp
-        # return residuals
+        The residual is calculated using Raoult's law on each component and the
+        spreading pressure from the current iteration.
+        """
         u_free = var[:-1]
         s = var[-1]
         phi = _softplus(s)
@@ -65,7 +96,6 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
             residuals[i] = phi - isotherms[i].spreading_pressure(p0)
         return residuals
 
-    # Solve for mole fractions in adsorbed phase by equating spreading pressures
     if adsorbed_mole_fraction_guess is None:
         # Default guess: pure-component loadings at these partial pressures
         loading_guess = [isotherms[i].loading(partial_pressures[i]) for i in \
@@ -78,14 +108,13 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
         # if list convert to numpy array
         adsorbed_mole_fraction_guess = np.asarray(adsorbed_mole_fraction_guess)
 
-    #guess = np.concatenate((adsorbed_mole_fraction_guess[:-1], [1.0]))
-
+    # Transform initial guesses to unconstrained space for root finding
     x_guess = adsorbed_mole_fraction_guess
     u_guess = np.log(x_guess[:-1] / x_guess[-1])
-    phi_guess = 1.0
     s_guess = np.log(np.exp(phi_guess) - 1.0)
     guess = np.concatenate((u_guess, [s_guess]))
 
+    # Solve for mole fractions in adsorbed phase and spreading pressure
     res = scipy.optimize.root(rast_equations, guess, method='lm')
 
     if not res.success:
@@ -95,20 +124,17 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
                         failed. This is likely because the default guess is not good
                         enough. Try a different starting guess for the adsorbed phase
                         mole fractions by passing an array adsorbed_mole_fraction_guess
+                        or a different spreading pressure guess by passing phi_guess to
+                        this function.
                         '''))
 
+    # Transform solved variables back to mole fractions and spreading pressure
     u_sol = res.x[:-1]
     phi = _softplus(res.x[-1])
     adsorbed_mole_fractions = _softmax(np.concatenate((u_sol, [0.0])))
-    # adsorbed_mole_fractions = np.asarray(res.x[:-1])
-    # phi = res.x[-1]
 
-    # # Concatenate mole fraction of last component
-    # adsorbed_mole_fractions = np.concatenate((adsorbed_mole_fractions,
-    #                                          [1.0 - np.sum(adsorbed_mole_fractions)]))
-
+    # This is likely unnecessary given the transformations. Can be removed in the future
     if np.any((adsorbed_mole_fractions < 0.0) | (adsorbed_mole_fractions > 1.0)):
-        print(adsorbed_mole_fractions)
         raise ValueError(dedent('''\
                          Adsorbed mole fraction not in [0, 1]. Try a different
                          starting guess for the adsorbed mole fractions by passing an
@@ -154,3 +180,5 @@ def rast(partial_pressures, isotherms, activity_coefficient, *, verbose=False,
 
     # return loadings [component 1, component 2, ...]. same units as in data
     return loadings
+
+# Add reverse RAST calculation in the future
