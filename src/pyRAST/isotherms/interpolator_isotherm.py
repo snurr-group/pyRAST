@@ -211,7 +211,7 @@ class InterpolatorIsotherm:
         Returns:
             float: p0 at given spreading pressure
         Raises:
-            RuntimeError if extrapolation is required.
+            RuntimeError: if extrapolation is required.
         """
         # Get all data points that are at nonzero pressures
         pressures = self.df[self.pressure_key].values[
@@ -451,7 +451,7 @@ class CubicIsotherm:
         Returns:
             float: Spreading pressure at given pressure
         Raises:
-            RuntimeError if extrapolation is required.
+            RuntimeError: if extrapolation is required.
         """
 
         # Max is either the max pressure in original data or extrap_p
@@ -502,7 +502,7 @@ class CubicIsotherm:
         Returns:
             float: p0 at given spreading pressure
         Raises:
-            RuntimeError if extrapolation is required.
+            RuntimeError: if extrapolation is required.
         """
         # Enforce Henry's law behavior at low pressures
         phi_at_p0 = self.henry_const * self.first_pressure
