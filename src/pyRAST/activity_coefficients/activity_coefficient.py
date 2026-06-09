@@ -1,14 +1,11 @@
-"""
-functions of activity coefficient parent class go here
-
-"""
+"""Base model for activity coefficient models."""
 
 from typing import cast
 
 import numpy as np
 from scipy.optimize import brentq
 
-from pyrast.isotherms.interpolator_isotherm import InterpolatorIsotherm
+from pyrast.isotherms.interpolator_isotherm import CubicIsotherm, InterpolatorIsotherm
 
 
 class ActivityCoefficient:
@@ -26,7 +23,11 @@ class ActivityCoefficient:
     comp_q: np.ndarray
     isotherms: list
     model_parameters: dict
-    model: str | None = None
+    model: str
+    c: float
+    gamma_tol: float
+    param_tol: float
+    max_iter: int
 
     def __new__(cls, model: str = '', *args, **kwargs):
         """docstring"""
@@ -46,6 +47,9 @@ class ActivityCoefficient:
 
     def __init__(self, total_f: np.ndarray | list | float, y: np.ndarray | list,
                  comp_q: np.ndarray | list, isotherms: list, model: str, *,
+                 c: float = 1, param_tol: float = 1e-4, gamma_tol: float = 1e-4,
+                 max_iter: int = 100, param_mixing: float = 0.2,
+                 verbose: bool = False,
                  assume_ideal_gamma: bool = False,
                  model_parameters: dict | None = None):
         """ One line description
@@ -71,6 +75,7 @@ class ActivityCoefficient:
             if len(isotherms) != len(y):
                 raise ValueError('Length of isotherms must match length of y and comp_q'
                                  '.')
+            self.c = c
         else: # Multiple fugacity points provided as 2D arrays
             total_f = np.asarray(total_f, dtype=float)
             for f in total_f:
@@ -97,6 +102,11 @@ class ActivityCoefficient:
         # Store model info
         self.model = model
 
+        # Store calculation info
+        self.param_tol = param_tol
+        self.gamma_tol = gamma_tol
+        self.max_iter = max_iter
+
         # Fit model to data
         # If user provided parameters, check that keys are correct
         if model_parameters is not None:
@@ -108,7 +118,7 @@ class ActivityCoefficient:
             if assume_ideal_gamma:
                 self._fit_to_gamma()
             else:
-                self._rigorous_fit_to_gamma()
+                self._rigorous_fit_to_gamma(param_mixing)
 
 
     def __repr__(self):
@@ -128,8 +138,7 @@ class ActivityCoefficient:
         raise NotImplementedError('inverse_excess_loading method must be implemented '
                                   'in subclass.')
 
-    def _gamma_from_loadings(self, comp_q, y, total_f, *, excess_loading = False,
-                             max_iter = 100, tol = 1e-3):
+    def _gamma_from_loadings(self, comp_q, y, total_f, *, excess_loading = False):
         """docstring"""
         q_total = sum(comp_q)
         x = comp_q / q_total
@@ -150,7 +159,12 @@ class ActivityCoefficient:
             def _phi_cap_for_isotherm(iso, total_f):
                 if isinstance(iso, InterpolatorIsotherm):
                     if iso.extrap_method is not None or iso.fill_value is not None:
-                        return np.inf
+                        return iso.extrap_p
+                    p_max = iso.df[iso.pressure_key].max()
+                    return iso.spreading_pressure(p_max)
+                if isinstance(iso, CubicIsotherm):
+                    if iso.extrap_method is not None:
+                        return iso.extrap_p
                     p_max = iso.df[iso.pressure_key].max()
                     return iso.spreading_pressure(p_max)
                 return np.inf
@@ -192,8 +206,6 @@ class ActivityCoefficient:
             raise ValueError("Could not find valid bracketing for root finding")
 
         phi_low, phi_high = _bracket_phi(residuals)
-        # phi_max = max(iso.spreading_pressure(total_f * 10)
-        #               for iso in self.isotherms)
         phi_sol = cast('float', brentq(residuals, phi_low, phi_high))
 
         for i in range(len(self.isotherms)):
@@ -203,7 +215,7 @@ class ActivityCoefficient:
             return gamma, phi_sol
 
         # Iterative excess loading correction
-        for iteration in range(max_iter):
+        for iteration in range(self.max_iter):
             gamma_old = gamma.copy()
             q_excess = self.inverse_excess_loading(x, phi_sol)
 
@@ -215,7 +227,7 @@ class ActivityCoefficient:
                 p0[i] = self.isotherms[i].p0(phi_sol)
             gamma = (y * total_f) / (p0 * x)
 
-            if np.all(np.abs(gamma - gamma_old) < tol):
+            if np.all(np.abs(gamma - gamma_old) < self.gamma_tol):
                 break
         else:
             print('gamma from loadings did not converge')
@@ -236,27 +248,26 @@ class ActivityCoefficient:
         self.model_parameters = dict(zip(self.param_names, res))'''
         pass
 
-    def _rigorous_fit_to_gamma(self, max_iter = 100, tol = 1e-6):
+    def _rigorous_fit_to_gamma(self, param_mixing: float):
         """docstring"""
         # First pass for model parameters is use ideal case
         self._fit_to_gamma()
 
         # Now we want to iteratively get more accurate model parameters
-        for iteration in range(max_iter):
+        for iteration in range(self.max_iter):
             params_old = self.model_parameters.copy()
             self._fit_to_gamma(excess_loading=True)
 
-            alpha = 0.2
             params_new = self.model_parameters.copy()
 
             for k in self.param_names:
-                self.model_parameters[k] = alpha * params_new[k] + (1 - alpha) * \
-                    params_old[k]
+                self.model_parameters[k] = param_mixing * params_new[k] + \
+                    (1 - param_mixing) * params_old[k]
 
             # Check convergence
             print(f'Iteration {iteration + 1}, model parameters: {self.model_parameters}')
-            if all(abs(self.model_parameters[param] - params_old[param]) < tol
-                   for param in self.param_names):
+            if all(abs(self.model_parameters[param] - params_old[param]) <
+                   self.param_tol for param in self.param_names):
                 print(f'Converged after {iteration + 1} iterations.')
                 break
 

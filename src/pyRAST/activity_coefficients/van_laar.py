@@ -40,7 +40,7 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
             gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f,
                                                    excess_loading=excess_loading)
             x = self.comp_q / np.sum(self.comp_q)
-            c = 5
+            c = self.c
             f = 1.0 - np.exp(-c * phi)
             a12 = (np.log(gamma[0])/f) * (1.0 + \
                   (x[1] * np.log(gamma[1]))/(x[0]*np.log(gamma[0])))**2
@@ -86,7 +86,8 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
                 res21 = a21 *f - a21_effs
                 return np.concatenate((res12, res21))
 
-            res = least_squares(residuals, x0=0.2, bounds=(1e-6, np.inf))
+            res = least_squares(residuals, x0=0.2, bounds=(1e-6, np.inf),
+                                ftol=self.param_tol, xtol=self.param_tol)
             c_fit = res.x[0]
             f_fit = phi if c_fit <= 1e-6 else (1.0 - np.exp(-c_fit * phi))
             denom = np.dot(f_fit, f_fit)

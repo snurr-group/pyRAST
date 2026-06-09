@@ -38,7 +38,7 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
             lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
             lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
             lhs = (lhs_0 + lhs_1) / 2.0
-            c = 0.2
+            c = self.c
             correction = 1.0 - np.exp(-c * phi)
             self.model_parameters = {'A': lhs / correction, 'C': c}
 
@@ -68,7 +68,8 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
                 a = np.dot(lhs, f) / np.dot(f, f)
                 return a * f - lhs
 
-            res = least_squares(residuals, x0=0.2, bounds=(1e-10, np.inf))
+            res = least_squares(residuals, x0=0.2, bounds=(1e-10, np.inf),
+                                ftol=self.param_tol, xtol=self.param_tol)
             c_fit = res.x[0]
             f_fit = phi if c_fit <= 1e-10 else (1.0 - np.exp(-c_fit * phi))
             a_fit = np.dot(lhs, f_fit) / np.dot(f_fit, f_fit)

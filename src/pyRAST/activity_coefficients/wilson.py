@@ -43,7 +43,7 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
             gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f,
                                                    excess_loading=excess_loading)
             x = self.comp_q / np.sum(self.comp_q)
-            c = 1
+            c = self.c
             ln_g = np.log(gamma)
 
             def equations(p):
@@ -65,7 +65,7 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
         else:
             # Handle the case where multiple data points are provided
             # In this case, we fit all parameters simultaneously using least squares
-            self.total_f = np.asarray(self.total_f) # fix pylance complaining
+            self.total_f = np.asarray(self.total_f)
             points = len(self.total_f)
             gamma = np.zeros((points, 2))
             phi = np.zeros(points)
@@ -90,7 +90,8 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
                     res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
                 return res
 
-            res = least_squares(residuals, x0=[0.0, 0.0, 0.1], xtol=1e-4, ftol=1e-4)
+            res = least_squares(residuals, x0=[0.0, 0.0, 0.1], xtol=self.param_tol,
+                                ftol=self.param_tol)
             if not res.success:
                 raise ValueError(
                     f"Wilson parameter fit failed: {res.message}. "

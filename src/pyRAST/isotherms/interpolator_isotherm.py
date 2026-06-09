@@ -1,4 +1,4 @@
-"""Interpolators for isotherm data."""
+"""Interpolator isotherm models."""
 
 from textwrap import dedent
 

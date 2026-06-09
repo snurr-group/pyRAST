@@ -9,8 +9,8 @@ from pyrast.activity_coefficients import ActivityCoefficient
 
 
 def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient, *,
-         verbose = False, warningoff = False, adsorbed_mole_fraction_guess = None,
-         phi_guess: float = 1.0):
+         verbose: bool = False, warningoff: bool = False,
+         adsorbed_mole_fraction_guess = None, phi_guess: float = 1.0):
     """Performs forward RAST calculation to predict mixture adsorption.
 
     The RAST calculation is performed by solving for the adsorbed phase mole fractions
@@ -182,8 +182,8 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
     return loadings
 
 def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
-                 activity_coefficient: ActivityCoefficient, *, verbose = False,
-                 warningoff = False, gas_mole_fraction_guess = None,
+                 activity_coefficient: ActivityCoefficient, *, verbose: bool = False,
+                 warningoff: bool = False, gas_mole_fraction_guess = None,
                  phi_guess: float = 1.0):
     """Performs reverse RAST calculation to predict gas phase of adsorbed solution.
 

@@ -5,8 +5,8 @@ import numpy as np
 import scipy.optimize
 
 
-def iast(partial_pressures, isotherms, *, verbose = False, warningoff = False,
-         adsorbed_mole_fraction_guess = None):
+def iast(partial_pressures, isotherms, *, verbose: bool = False,
+         warningoff: bool = False, adsorbed_mole_fraction_guess = None):
     """Performs forward IAST calculation to predict mixture adsorption.
 
     The IAST calculation is performed by solving for the adsorbed phase mole fractions
@@ -156,8 +156,9 @@ def iast(partial_pressures, isotherms, *, verbose = False, warningoff = False,
     # return loadings [component 1, component 2, ...]. same units as in data
     return loadings
 
-def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *, verbose = False,
-                 warningoff = False, gas_mole_fraction_guess = None):
+def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
+                 verbose: bool = False, warningoff: bool = False,
+                 gas_mole_fraction_guess = None):
     """Performs reverse IAST calculation to predict gas phase of adsorbed solution.
 
     The IAST calculation is performed by solving for the gas phase mole fractions

@@ -46,7 +46,7 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
             gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f,
                                                    excess_loading=excess_loading)
             x = self.comp_q / np.sum(self.comp_q)
-            c = 1
+            c = self.c
             ln_g = np.log(gamma)
 
             def equations(p):
@@ -92,7 +92,8 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
                     res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
                 return res
 
-            res = least_squares(residuals, x0=[1.0, 0.5], xtol=1e-4, ftol=1e-4)
+            res = least_squares(residuals, x0=[1.0, 0.5], xtol=self.param_tol,
+                                ftol=self.param_tol)
             if not res.success:
                 raise ValueError(
                     f"aNRTL parameter fit failed: {res.message}. "
