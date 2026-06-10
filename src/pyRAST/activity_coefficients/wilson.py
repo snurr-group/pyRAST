@@ -13,7 +13,7 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
     # Class variables for every instance
     name = 'Wilson'
     param_names = ('L12', 'L21', 'C')
-    param_default_bounds = ((0, np.inf), (0, np.inf), (-np.inf, np.inf))
+    param_default_bounds = ((0, np.inf), (0, np.inf), (0.0, np.inf))
 
     def ln_gamma(self, x, phi):
         """docstring"""

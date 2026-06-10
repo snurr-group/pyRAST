@@ -13,7 +13,7 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
     # Class variables for every instance
     name = 'aNRTL'
     param_names = ('t12', 'C')
-    param_default_bounds = ((np.inf, np.inf), (-np.inf, np.inf))
+    param_default_bounds = ((np.inf, np.inf), (0.0, np.inf))
     alpha = 0.3
 
     def ln_gamma(self, x, phi):

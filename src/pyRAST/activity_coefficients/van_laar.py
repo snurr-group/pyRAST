@@ -13,7 +13,7 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
     # Class variables for every instance
     name = 'VanLaar'
     param_names = ('A12', 'A21', 'C')
-    param_default_bounds = ((-np.inf, np.inf), (-np.inf, np.inf), (-np.inf, np.inf))
+    param_default_bounds = ((-np.inf, np.inf), (-np.inf, np.inf), (0.0, np.inf))
 
     def ln_gamma(self, x, phi):
         """docstring"""

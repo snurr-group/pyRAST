@@ -3,7 +3,7 @@
 from typing import cast
 
 import numpy as np
-from scipy.optimize import brentq
+from scipy.optimize import brentq, least_squares
 
 from pyrast.isotherms.interpolator_isotherm import CubicIsotherm, InterpolatorIsotherm
 
@@ -47,9 +47,9 @@ class ActivityCoefficient:
 
     def __init__(self, total_f: np.ndarray | list | float, y: np.ndarray | list,
                  loadings: np.ndarray | list, isotherms: list, model: str, *,
-                 c: float = 1, param_tol: float = 1e-4, gamma_tol: float = 1e-4,
-                 max_iter: int = 100, param_mixing: float = 0.2,
-                 verbose: bool = False,
+                 total_loading: bool = False, c: float = 1, param_tol: float = 1e-4,
+                 gamma_tol: float = 1e-4, max_iter: int = 100,
+                 param_mixing: float = 0.2, verbose: bool = False,
                  assume_ideal_gamma: bool = False,
                  model_parameters: dict | None = None):
         """ One line description
@@ -61,22 +61,43 @@ class ActivityCoefficient:
             type: Description of return value
 
         """
-        # If total_f is a float, ensure y and loadings are 1D
-        if isinstance(total_f, (int, float)):
-            total_f = float(total_f)
-            if total_f <= 0:
-                raise ValueError('Total fugacity must be positive.')
-            if len(y) != len(loadings):
-                raise ValueError('Length of y and loadings must be the same.')
-            if not np.isclose(sum(y), 1.0):
-                raise ValueError('Gas phase mole fractions must sum to 1.0.')
-            if not all(q >= 0 for q in loadings):
-                raise ValueError('Adsorbed phase loadings must be non-negative.')
-            if len(isotherms) != len(y):
-                raise ValueError('Length of isotherms must match length of y and'
-                                 'loadings.')
-            self.c = c
-        # Multiple fugacity points provided as 2D arrays
+        # CLEAN THIS UP
+       # Validate inputs when component loadings are provided
+        if not total_loading:
+            # If total_f is a float, ensure y and loadings are 1D
+            if isinstance(total_f, (int, float)):
+                total_f = float(total_f)
+                if total_f <= 0:
+                    raise ValueError('Total fugacity must be positive.')
+                if len(y) != len(loadings):
+                    raise ValueError('Length of y and loadings must be the same.')
+                if not np.isclose(sum(y), 1.0):
+                    raise ValueError('Gas phase mole fractions must sum to 1.0.')
+                if not all(q >= 0 for q in loadings):
+                    raise ValueError('Adsorbed phase loadings must be non-negative.')
+                if len(isotherms) != len(y):
+                    raise ValueError('Length of isotherms must match length of y and'
+                                        'loadings.')
+                self.c = c
+            # Multiple fugacity points provided as 2D arrays
+            else:
+                total_f = np.asarray(total_f, dtype=float)
+                for f in total_f:
+                    if f <= 0:
+                        raise ValueError('Total fugacity must be positive.')
+                y = np.asarray(y)
+                loadings = np.asarray(loadings)
+                if y.shape != loadings.shape:
+                    raise ValueError('y and loadings must have the same dimensions.')
+                if not np.allclose(np.sum(y, axis=1), 1.0):
+                    raise ValueError('All gas phase mole fractions must sum to 1.0.')
+                if not np.all(loadings >= 0):
+                    raise ValueError('All adsorbed phase loadings must be'
+                                     'non-negative.')
+                if len(isotherms) != y.shape[1]:
+                    raise ValueError('Length of isotherms must match number of'
+                                     'components in y and loadings.')
+        # Validate inputs when total loading is used
         else:
             total_f = np.asarray(total_f, dtype=float)
             for f in total_f:
@@ -84,15 +105,18 @@ class ActivityCoefficient:
                     raise ValueError('Total fugacity must be positive.')
             y = np.asarray(y)
             loadings = np.asarray(loadings)
-            if y.shape != loadings.shape:
-                raise ValueError('y and loadings must have the same dimensions.')
+            if y.shape[0] != loadings.shape[0]:
+                raise ValueError('Length of y and loadings must be the same.')
             if not np.allclose(np.sum(y, axis=1), 1.0):
                 raise ValueError('All gas phase mole fractions must sum to 1.0.')
             if not np.all(loadings >= 0):
                 raise ValueError('All adsorbed phase loadings must be non-negative.')
             if len(isotherms) != y.shape[1]:
-                raise ValueError('Length of isotherms must match number of components '
-                                 'in y and loadings.')
+                raise ValueError('Length of isotherms must match number of'
+                                 'components in y and loadings.')
+            if len(self.param_names) > total_f.shape[0]:
+                raise ValueError('Number of model parameters must be at least equal'
+                                 ' to number of total loading points.')
 
         # Store data
         self.total_f = total_f
@@ -114,12 +138,15 @@ class ActivityCoefficient:
             if set(model_parameters.keys()) != set(self.param_names):
                 raise ValueError(f'model_parameters keys must be {self.param_names}.')
             self.model_parameters = model_parameters
-        else:
+        elif not total_loading:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
             if assume_ideal_gamma:
                 self._fit_component_loadings(verbose=verbose)
             else:
                 self._fit_real_component_loadings(param_mixing, verbose=verbose)
+        else:
+            self.model_parameters = dict.fromkeys(self.param_names, np.nan)
+            self._fit_total_loading()
 
 
     def __repr__(self):
@@ -243,14 +270,15 @@ class ActivityCoefficient:
             gamma = (y * total_f) / (p0 * x)
 
             # Print convergence info if verbose
-            if verbose:
-                print(f'Excess loading correction loop: iteration {iteration + 1}, '
-                      f'phi: {phi_sol}, gamma: {gamma}')
+            # This is off for now, it is not super informative.
+            # if verbose:
+            #     print(f'Excess loading correction loop: iteration {iteration + 1}, '
+            #           f'phi: {phi_sol}, gamma: {gamma}')
 
             # Check convergence
             if np.all(np.abs(gamma - gamma_old) < self.gamma_tol):
-                if verbose:
-                    print(f'Gamma converged after {iteration + 1} iterations.')
+                # if verbose:
+                #     print(f'Gamma converged after {iteration + 1} iterations.')
                 break
         # If we reach max iterations without convergence, print warning
         else:
@@ -299,5 +327,44 @@ class ActivityCoefficient:
         else:
             print('Model parameters did not converge.')
 
-    def _fit_ideal_total_loading(self, total_f, y):
-        pass
+    def _fit_total_loading(self, *, verbose: bool = False):
+        """docstring"""
+        # Import RAST here to avoid circular import issues
+        from pyrast.calculations.rast import rast
+
+        total_f = np.asarray(self.total_f)
+        points = len(total_f)
+
+        def residuals(params):
+            # Assign parameters to model
+            num_params = len(self.param_names)
+            self.model_parameters = {self.param_names[i]: params[i]
+                                     for i in range(num_params)}
+            if verbose:
+                print(self.model_parameters)
+            res = np.zeros(points)
+            for i in range(points):
+                q_total_pred = np.sum(rast(total_f[i] * self.y[i], self.isotherms,
+                                           self))
+                res[i] = q_total_pred - self.loadings[i]
+            return res
+
+        # Assign initial guess for parameters (C=1, zeros for other parameters)
+        initial_guess = [1e-12] * (len(self.param_names) - 1) + [1.0]
+
+        # Enforce parameter bounds
+        lower_bounds = [bound[0] for bound in self.param_default_bounds]
+        upper_bounds = [bound[1] for bound in self.param_default_bounds]
+
+        res = least_squares(residuals, x0=initial_guess, xtol=self.param_tol,
+                            ftol=self.param_tol, bounds=(lower_bounds, upper_bounds))
+
+        if not res.success:
+            raise RuntimeError(f'Total loading fit failed: {res.message}. Try a '
+                               'different initial guess or check data quality.')
+
+        # Assign final parameters to model
+        num_params = len(self.param_names)
+        self.model_parameters = {self.param_names[i]: res.x[i]
+                                 for i in range(num_params)}
+

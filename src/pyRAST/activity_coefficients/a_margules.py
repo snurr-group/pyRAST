@@ -13,7 +13,7 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
     # Class variables for every instance
     name = 'aMargules'
     param_names = ('A12', 'A21', 'C')
-    param_default_bounds = ((-np.inf, np.inf), (-np.inf, np.inf), (-np.inf, np.inf))
+    param_default_bounds = ((-np.inf, np.inf), (-np.inf, np.inf), (0.0, np.inf))
 
     def ln_gamma(self, x, phi):
         """docstring"""
