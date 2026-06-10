@@ -33,7 +33,8 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
 
         return c * a12 * a21 * x[0] * x[1] * np.exp(-c * phi) / (a12*x[0] + a21*x[1])
 
-    def _fit_to_gamma(self, *, excess_loading = False, verbose: bool = False):
+    def _fit_ideal_component_loadings(self, *, excess_loading: bool = False,
+                                      verbose: bool = False):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed

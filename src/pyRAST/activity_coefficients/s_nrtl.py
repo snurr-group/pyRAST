@@ -39,7 +39,8 @@ class SNRTL(ActivityCoefficient, model_name='sNRTL'):
         return c * x[0] * x[1] * t12 * (g12 - 1.0) * np.exp(-c * phi) / \
                (x[0]*g12 + x[1])
 
-    def _fit_to_gamma(self, *, excess_loading = False, verbose: bool = False):
+    def _fit_ideal_component_loadings(self, *, excess_loading: bool = False,
+                                      verbose: bool = False):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed

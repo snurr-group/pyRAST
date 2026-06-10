@@ -36,7 +36,8 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
         return c * np.exp(-c * phi) * (-x[0] * np.log(x[0] + l12*x[1]) - x[1] * np.log(\
             x[1] + l21*x[0]))
 
-    def _fit_to_gamma(self, *, excess_loading = False, verbose: bool = False):
+    def _fit_ideal_component_loadings(self, *, excess_loading: bool = False,
+                                      verbose: bool = False):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed
