@@ -24,7 +24,7 @@ class InterpolatorIsotherm:
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
                  fill_value: float | None = None, extrap_method: str | None = None,
-                 extrap_p: float = 1e20, extrap_points: int = 100, **fit_options):
+                 extrap_p: float = 1e30, extrap_points: int = 100, **fit_options):
         """Initializes InterpolatorIsotherm utilizing linear interpolator.
 
         This class uses the scipy.interpolate.interp1d, which is a linear interpolation

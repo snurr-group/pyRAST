@@ -27,7 +27,7 @@ class ModelIsotherm:
     rmse: float | None = None
     model: str | None = None
 
-    def __new__(cls, model: str = '', *args, **kwargs):
+    def __new__(cls, *args, **kwargs):
         """Creates an instance of the user-specified model.
 
         This factory design pattern allows users to follow the syntax of pyIAST while
@@ -35,6 +35,12 @@ class ModelIsotherm:
         should never interact with this method directly.
         """
         if cls is ModelIsotherm:
+            model = kwargs.pop('model', None)
+            if model is None:
+                if args and isinstance(args[0], str):
+                    model = args[0]
+                elif len(args) >= 4:
+                    model = args[3]
             if model not in cls._MODELS:
                 raise ValueError(f'{model} is not a valid model. Choose from'
                                  f' {list(cls._MODELS.keys())}')
@@ -42,7 +48,7 @@ class ModelIsotherm:
             return super().__new__(subclass)
         return super().__new__(cls)
 
-    def __init_subclass__(cls, model_name: str = '', *args, **kwargs):
+    def __init_subclass__(cls, *, model_name: str = '', **kwargs):
         """Registers subclasses of ModelIsotherm at import time.
 
         Users should never interact with this method directly. To modify the list of

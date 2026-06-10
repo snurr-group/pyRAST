@@ -28,7 +28,7 @@ class ActivityCoefficient:
     param_tol: float
     max_iter: int
 
-    def __new__(cls, model: str = '', *args, **kwargs):
+    def __new__(cls, *args, **kwargs):
         """Creates an instance of the user-specified model.
 
         This factory design pattern is identical to the model isotherms and allows
@@ -36,6 +36,12 @@ class ActivityCoefficient:
         should never interact with this method directly.
         """
         if cls is ActivityCoefficient:
+            model = kwargs.pop('model', None)
+            if model is None:
+                if args and isinstance(args[0], str):
+                    model = args[0]
+                elif len(args) >= 4:
+                    model = args[3]
             if model not in cls._MODELS:
                 raise ValueError(f'{model} is not a valid model. Choose from'
                                  f' {list(cls._MODELS.keys())}')
@@ -43,7 +49,7 @@ class ActivityCoefficient:
             return super().__new__(subclass)
         return super().__new__(cls)
 
-    def __init_subclass__(cls, model_name: str = '', *args, **kwargs):
+    def __init_subclass__(cls, *, model_name: str = '', **kwargs):
         """Registers subclasses of ModelIsotherm at import time.
 
         Users should never interact with this method directly. To modify the list of
@@ -53,10 +59,10 @@ class ActivityCoefficient:
         if model_name:
             ActivityCoefficient._MODELS[model_name] = cls
 
-    def __init__(self, *, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
-                 isotherms: list, model: str, total_loading: bool = False, c: float = 1,
-                 param_tol: float = 1e-4, gamma_tol: float = 1e-4, max_iter: int = 100,
-                 param_mixing: float = 0.2, verbose: bool = False,
+    def __init__(self, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
+                 isotherms: list, model: str, *, total_loading: bool = False,
+                 c: float = 1, param_tol: float = 1e-4, gamma_tol: float = 1e-4,
+                 max_iter: int = 100, param_mixing: float = 0.2, verbose: bool = False,
                  assume_ideal_gamma: bool = False,
                  model_parameters: dict | None = None):
         """Initializes an activity coefficient model.
@@ -66,22 +72,22 @@ class ActivityCoefficient:
         provides the framework for fitting activity coefficient models from binary
         mixture data. There are two ways to fit the model parameters:
         1) Component loadings: If the user provides component loadings for each
-            adsorbed species at different total fugacities or gas phase compositions,
-            the model parameters will be fit using an iterative approach. In the default
-            mode, the model parameters are first fit assuming zero excess loading, and
-            then iteratively refit with excess loading correction until convergence.
-            Where possible, each model fits C and analytically solves for the other
-            parameters to reduce computation time. Activity coefficient models can be
-            fit using only a single data point and assuming a C value, or using 2+ data
-            points to fit C as well.If the user sets assume_ideal_gamma=True, the model
-            parameters will be fit assuming zero excess loading.
-        2) Total loading: If the user provides total loadings for different total
-            fugacities or gas phase compositions, the model parameters will be fit by
-            minimizing the residual between the predicted total loading from a RAST
-            calculation and the provided total loading. This approach is more
-            computationally intensive, but is useful for experimental data where
-            component loadings are difficult to measure. The user must provide at least
-            as many total loading data points as model parameters.
+        adsorbed species at different partial fugacities, the model parameters will
+        be fit using an iterative approach. In the default mode, the model
+        parameters are first fit assuming zero excess loading, and then iteratively
+        refit with excess loading correction until convergence. Where possible, each
+        model fits C and analytically solves for the other parameters to reduce
+        computation time. Activity coefficient models can be fit using only a single
+        data point and assuming a C value, or using 2+ data points to fit C as well.
+        If the user sets assume_ideal_gamma=True, the model parameters will be fit
+        assuming zero excess loading.
+        2) Total loading: If the user provides total loadings for different partial
+        fugacities, the model parameters will be fit by minimizing the residual
+        between the predicted total loading from a RAST calculation and the provided
+        total loading. This approach is more computationally intensive, but is
+        useful for experimental data where component loadings are difficult to
+        measure. The user must provide at least as many total loading data points as
+        model parameters.
 
         For a full discussion of the fitting procedure and the underlying equations,
         see the documentation or paper discussion. Fitting activity coefficient
@@ -96,7 +102,6 @@ class ActivityCoefficient:
         Args:
             partial_fug (array-like): Partial fugacities of each component in
                 the gas phase.
-            y (array-like): Gas phase mole fractions of each component.
             loadings (array-like): Adsorbed phase loadings of each component (or total
                 loading if total_loading=True).
             isotherms (list): List of pure component isotherm objects for each
@@ -128,18 +133,37 @@ class ActivityCoefficient:
         Returns:
             None: Model parameters are stored in self.model_parameters.
         Raises:
-            ValueError: If input data is invalid (e.g. negative loadings, mole fractions
-                that don't sum to 1, mismatched lengths of input arrays, etc.) or if
-                model_parameters keys don't match expected parameter names.
+            ValueError: If input data is invalid (e.g. negative loadings,
+                mismatched lengths of input arrays, etc.) or if model_parameters keys
+                don't match expected parameter names.
             RuntimeError: If certain fitting procedures fail to converge.
         """
-        # CLEAN THIS UP
-       # Validate inputs when component loadings are provided
+        # Validate inputs
+        partial_fug = np.asarray(partial_fug)
+        loadings = np.asarray(loadings)
+        if np.any(loadings < 0):
+            raise ValueError('Component loadings must be non-negative.')
+        if np.any(partial_fug < 0):
+            raise ValueError('Partial fugacities must be non-negative.')
+        if not total_loading and partial_fug.shape != loadings.shape:
+            raise ValueError('Arrays for partial fugacities and loadings must have'
+                            'the same dimensions.')
+        if total_loading and partial_fug.shape[0] != loadings.shape[0]:
+            raise ValueError('Arrays for partial fugacities and total loadings must'
+                             'have the same number of data points.')
+        if partial_fug.shape[1] != 2:
+            raise ValueError('This activity coefficient model is currently only '
+                            'implemented for binary mixtures (2 components). '
+                            'Your arrays must have shape (n, 2) where n is the '
+                            'number of data points.')
+        if len(isotherms) != 2:
+            raise ValueError('Exactly 2 isotherm objects must be provided in a list, '
+                             'one for each component.')
 
 
         # Store data
-        self.partial_fug = np.asarray(partial_fug)
-        self.loadings = np.asarray(loadings)
+        self.partial_fug = partial_fug
+        self.loadings = loadings
         self.isotherms = isotherms
 
         # Store model info
@@ -165,7 +189,6 @@ class ActivityCoefficient:
         else:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
             self._fit_total_loading()
-
 
     def __repr__(self):
         """String representation of activity coefficient model."""
