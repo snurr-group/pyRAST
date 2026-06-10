@@ -28,12 +28,13 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
         return self.model_parameters['A'] * self.model_parameters['C'] * x[0] * x[1] * \
                np.exp(-self.model_parameters['C'] * phi)
 
-    def _fit_to_gamma(self, *, excess_loading = False):
+    def _fit_to_gamma(self, *, excess_loading = False, verbose: bool = False):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed
             gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f,
-                                                   excess_loading=excess_loading)
+                                                   excess_loading=excess_loading,
+                                                   verbose=verbose)
             x = self.comp_q / np.sum(self.comp_q)
             lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
             lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
@@ -53,7 +54,8 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
             for i in range(points):
                 gamma, phi[i] = self._gamma_from_loadings(self.comp_q[i], self.y[i],
                                                           self.total_f[i],
-                                                          excess_loading=excess_loading)
+                                                          excess_loading=excess_loading,
+                                                          verbose=verbose)
                 x = self.comp_q[i] / np.sum(self.comp_q[i])
                 lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
                 lhs_1 = np.log(gamma[1]) / (x[0] ** 2)

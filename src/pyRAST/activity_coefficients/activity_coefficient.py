@@ -76,7 +76,8 @@ class ActivityCoefficient:
                 raise ValueError('Length of isotherms must match length of y and comp_q'
                                  '.')
             self.c = c
-        else: # Multiple fugacity points provided as 2D arrays
+        # Multiple fugacity points provided as 2D arrays
+        else:
             total_f = np.asarray(total_f, dtype=float)
             for f in total_f:
                 if f <= 0:
@@ -116,46 +117,50 @@ class ActivityCoefficient:
         else:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
             if assume_ideal_gamma:
-                self._fit_to_gamma()
+                self._fit_to_gamma(verbose=verbose)
             else:
-                self._rigorous_fit_to_gamma(param_mixing)
+                self._rigorous_fit_to_gamma(param_mixing, verbose=verbose)
 
 
     def __repr__(self):
+        """String representation of activity coefficient model."""
         return (f'{self.name} activity coefficient model with parameters: '
                 f'{self.model_parameters}')
 
     def ln_gamma(self, x, phi):
-        """docstring"""
+        """Calculates natural log of activity coefficients."""
         raise NotImplementedError('ln_gamma method must be implemented in subclass.')
 
     def gamma(self, x, phi):
-        """docstring"""
+        """Calculates activity coefficients (gamma) from ln_gamma."""
         return np.exp(self.ln_gamma(x, phi))
 
     def inverse_excess_loading(self, x, phi):
-        """docstring"""
+        """Calculates inverse excess loading."""
         raise NotImplementedError('inverse_excess_loading method must be implemented '
                                   'in subclass.')
 
-    def _gamma_from_loadings(self, comp_q, y, total_f, *, excess_loading = False):
+    def _gamma_from_loadings(self, comp_q, y, total_f, *, excess_loading = False,
+                             verbose: bool = False):
         """docstring"""
+        # Calculate important variables for determining gamma and phi
         q_total = sum(comp_q)
         x = comp_q / q_total
         p0 = np.zeros(len(self.isotherms))
 
+        # Define residual function for root finding to solve for phi
         def residuals(phi, q_excess = 0.0):
             for i in range(len(self.isotherms)):
                 p0[i] = self.isotherms[i].p0(phi)
             q0 = np.array([self.isotherms[i].loading(p0[i])
                            for i in range(len(self.isotherms))])
-            # We make an assumption of ideality here, may need to change later
             q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
             return q_total_pred - q_total
 
         # Use a bracketing strategy to ensure brentq can find a root.
         def _bracket_phi(residuals, q_excess = 0.0, phi_low = 1e-12, phi_high = 1.0,
                          max_expand = 60, phi_cap = np.inf):
+            # Determine the maximum phi based on isotherm extrapolation limits
             def _phi_cap_for_isotherm(iso, total_f):
                 if isinstance(iso, InterpolatorIsotherm):
                     if iso.extrap_method is not None or iso.fill_value is not None:
@@ -173,18 +178,22 @@ class ActivityCoefficient:
             caps = [_phi_cap_for_isotherm(iso, total_f) for iso in self.isotherms]
             phi_cap = min(caps) if any(np.isfinite(caps)) else np.inf
 
+            # Check lower limit to ensure we don't start with an invalid point
             f_low = residuals(phi_low, q_excess=q_excess)
             if not np.isfinite(f_low):
                 raise ValueError('Residual is not finite at initial phi_low.')
 
+            # Lower upper limit if necessary to find a finite residual
             f_high = residuals(phi_high, q_excess=q_excess)
             while not np.isfinite(f_high) and phi_high > phi_low:
-                phi_high *= 0.5
+                phi_high *= 0.9
                 f_high = residuals(phi_high, q_excess=q_excess)
 
+            # Throw error if we can't find a finite residual at the upper limit
             if not np.isfinite(f_high):
                 raise ValueError('Could not find finite residual at initial phi_high.')
 
+            # Expand upper limit until we bracket a root or hit the cap
             for _ in range(max_expand):
                 if np.isfinite(f_high) and np.sign(f_low) != np.sign(f_high):
                     return phi_low, phi_high
@@ -203,11 +212,14 @@ class ActivityCoefficient:
                     if not np.isfinite(f_high):
                         break
 
+            # If we exit the loop without finding a valid bracket, raise an error
             raise ValueError("Could not find valid bracketing for root finding")
 
+        # Solve for phi without excess loading correction with bracketed root finding
         phi_low, phi_high = _bracket_phi(residuals)
         phi_sol = cast('float', brentq(residuals, phi_low, phi_high))
 
+        # Calculate gamma from loadings and phi without excess loading correction
         for i in range(len(self.isotherms)):
             p0[i] = self.isotherms[i].p0(phi_sol)
         gamma = (y * total_f) / (p0 * x)
@@ -216,61 +228,71 @@ class ActivityCoefficient:
 
         # Iterative excess loading correction
         for iteration in range(self.max_iter):
+            # Copy old gamma
             gamma_old = gamma.copy()
             q_excess = self.inverse_excess_loading(x, phi_sol)
 
-            phi_low, phi_high = _bracket_phi(residuals, q_excess = q_excess)
             # Resolve phi with excess loading correction
+            phi_low, phi_high = _bracket_phi(residuals, q_excess = q_excess)
             phi_sol = cast('float', brentq(residuals,
                                            phi_low, phi_high, args=(q_excess,)))
+
+            # Calculate new gamma
             for i in range(len(self.isotherms)):
                 p0[i] = self.isotherms[i].p0(phi_sol)
             gamma = (y * total_f) / (p0 * x)
 
+            # Print convergence info if verbose
+            if verbose:
+                print(f'Excess loading correction loop: iteration {iteration + 1}, '
+                      f'phi: {phi_sol}, gamma: {gamma}')
+
+            # Check convergence
             if np.all(np.abs(gamma - gamma_old) < self.gamma_tol):
+                if verbose:
+                    print(f'Gamma converged after {iteration + 1} iterations.')
                 break
+        # If we reach max iterations without convergence, print warning
         else:
-            print('gamma from loadings did not converge')
+            print('Gamma from loadings did not converge.')
 
         return gamma, phi_sol
 
-    def _fit_to_gamma(self, *, excess_loading = False):
+    def _fit_to_gamma(self, *, excess_loading = False, verbose: bool = False):
         """docstring"""
-        '''gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f)
-        x = self.comp_q / np.sum(self.comp_q)
+        return NotImplementedError('_fit_to_gamma method must be implemented in'
+                                   'subclass.')
 
-        def residuals(params):
-            self.model_parameters = dict(zip(self.param_names, params))
-            return self.ln_gamma(x, phi) - np.log(gamma)
-
-        res = fsolve(residuals, [1.0] * len(self.param_names))
-
-        self.model_parameters = dict(zip(self.param_names, res))'''
-        pass
-
-    def _rigorous_fit_to_gamma(self, param_mixing: float):
+    def _rigorous_fit_to_gamma(self, param_mixing: float, *, verbose: bool = False):
         """docstring"""
         # First pass for model parameters is use ideal case
-        self._fit_to_gamma()
+        self._fit_to_gamma(verbose=verbose)
 
         # Now we want to iteratively get more accurate model parameters
         for iteration in range(self.max_iter):
+            # Copy old parameters
             params_old = self.model_parameters.copy()
-            self._fit_to_gamma(excess_loading=True)
+            self._fit_to_gamma(excess_loading=True, verbose=verbose)
 
+            # Mix new and old parameters to improve stability
             params_new = self.model_parameters.copy()
-
             for k in self.param_names:
                 self.model_parameters[k] = param_mixing * params_new[k] + \
                     (1 - param_mixing) * params_old[k]
 
+            # Print parameters at each iteration if verbose
+            if verbose:
+                print(f'Model parameter convergence loop: iteration {iteration + 1}, '
+                      f'model parameters: {self.model_parameters}')
+
             # Check convergence
-            print(f'Iteration {iteration + 1}, model parameters: {self.model_parameters}')
             if all(abs(self.model_parameters[param] - params_old[param]) <
                    self.param_tol for param in self.param_names):
-                print(f'Converged after {iteration + 1} iterations.')
+                if verbose:
+                    print(f'Model parameters converged after {iteration + 1} '
+                          'iterations.')
                 break
 
         # If we reach max iterations without convergence, print warning
         else:
-            print('did not converge')
+            print('Model parameters did not converge.')
