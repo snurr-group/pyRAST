@@ -102,14 +102,14 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
 
             # Fit C by minimizing least squares
             def residuals(c):
-                f = phi if c <= 1e-10 else (1.0 - np.exp(-c * phi))
+                f = phi if c <= 1e-6 else (1.0 - np.exp(-c * phi))
                 a = np.dot(lhs, f) / np.dot(f, f)
                 return a * f - lhs
 
-            res = least_squares(residuals, x0=0.2, bounds=(1e-10, np.inf),
-                                ftol=self.param_tol, xtol=self.param_tol)
+            res = least_squares(residuals, x0=1.0, bounds=(0, np.inf),
+                                xtol=self.param_tol)
             c_fit = res.x[0]
-            f_fit = phi if c_fit <= 1e-10 else (1.0 - np.exp(-c_fit * phi))
+            f_fit = phi if c_fit <= 1e-6 else (1.0 - np.exp(-c_fit * phi))
             a_fit = np.dot(lhs, f_fit) / np.dot(f_fit, f_fit)
 
             # maybe check residuals here to be safe

@@ -95,7 +95,7 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
                 ln_gamma = self.ln_gamma(x, phi)
                 return ln_gamma - ln_g
 
-            sol = root(equations, x0=[0.0, 0.0], method='hybr', tol=1e-10)
+            sol = root(equations, x0=[1.0, 1.0], method='hybr', tol=1e-10)
 
             if not sol.success:
                 raise ValueError(
@@ -133,8 +133,7 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
                     res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
                 return res
 
-            res = least_squares(residuals, x0=[0.0, 0.0, 0.1], xtol=self.param_tol,
-                                ftol=self.param_tol)
+            res = least_squares(residuals, x0=[1.1, 0.9, 1.0], xtol=self.param_tol)
             if not res.success:
                 raise ValueError(
                     f"Wilson parameter fit failed: {res.message}. "

@@ -131,8 +131,8 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
                 res21 = a21 *f - a21_effs
                 return np.concatenate((res12, res21))
 
-            res = least_squares(residuals, x0=0.2, bounds=(1e-15, np.inf),
-                                ftol=self.param_tol, xtol=self.param_tol)
+            res = least_squares(residuals, x0=1, bounds=(0, np.inf),
+                                xtol=self.param_tol)
             c_fit = res.x[0]
             f_fit = phi if c_fit <= 1e-6 else (1.0 - np.exp(-c_fit * phi))
             denom = np.dot(f_fit, f_fit)
