@@ -28,8 +28,8 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
         return self.model_parameters['A'] * self.model_parameters['C'] * x[0] * x[1] * \
                np.exp(-self.model_parameters['C'] * phi)
 
-    def _fit_ideal_component_loadings(self, *, excess_loading: bool = False,
-                                      verbose: bool = False):
+    def _fit_component_loadings(self, *, excess_loading: bool = False,
+                                verbose: bool = False):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed

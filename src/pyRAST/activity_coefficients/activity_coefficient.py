@@ -117,7 +117,7 @@ class ActivityCoefficient:
         else:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
             if assume_ideal_gamma:
-                self._fit_ideal_component_loadings(verbose=verbose)
+                self._fit_component_loadings(verbose=verbose)
             else:
                 self._fit_real_component_loadings(param_mixing, verbose=verbose)
 
@@ -258,23 +258,23 @@ class ActivityCoefficient:
 
         return gamma, phi_sol
 
-    def _fit_ideal_component_loadings(self, *, excess_loading: bool = False,
+    def _fit_component_loadings(self, *, excess_loading: bool = False,
                                       verbose: bool = False):
         """docstring"""
-        return NotImplementedError('_fit_ideal_component_loadings method must be'
+        return NotImplementedError('_fit_component_loadings method must be'
                                    'implemented in subclass.')
 
     def _fit_real_component_loadings(self, param_mixing: float, *,
                                      verbose: bool = False):
         """docstring"""
         # First pass for model parameters is use ideal case
-        self._fit_ideal_component_loadings(verbose=verbose)
+        self._fit_component_loadings(verbose=verbose)
 
         # Now we want to iteratively get more accurate model parameters
         for iteration in range(self.max_iter):
             # Copy old parameters
             params_old = self.model_parameters.copy()
-            self._fit_ideal_component_loadings(excess_loading=True, verbose=verbose)
+            self._fit_component_loadings(excess_loading=True, verbose=verbose)
 
             # Mix new and old parameters to improve stability
             params_new = self.model_parameters.copy()
@@ -298,3 +298,6 @@ class ActivityCoefficient:
         # If we reach max iterations without convergence, print warning
         else:
             print('Model parameters did not converge.')
+
+    def _fit_ideal_total_loading(self, total_f, y):
+        pass
