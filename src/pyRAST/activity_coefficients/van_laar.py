@@ -38,10 +38,10 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed
-            gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f,
+            gamma, phi = self._gamma_from_loadings(self.loadings, self.y, self.total_f,
                                                    excess_loading=excess_loading,
                                                    verbose=verbose)
-            x = self.comp_q / np.sum(self.comp_q)
+            x = self.loadings / np.sum(self.loadings)
             c = self.c
             f = 1.0 - np.exp(-c * phi)
             a12 = (np.log(gamma[0])/f) * (1.0 + \
@@ -60,11 +60,12 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
             xs = np.zeros((points, 2))
 
             for i in range(points):
-                gamma[i], phi[i] = self._gamma_from_loadings(self.comp_q[i], self.y[i],
-                                                          self.total_f[i],
+                gamma[i], phi[i] = self._gamma_from_loadings(self.loadings[i],
+                                                             self.y[i],
+                                                             self.total_f[i],
                                                           excess_loading=excess_loading,
-                                                          verbose=verbose)
-                xs[i] = self.comp_q[i] / np.sum(self.comp_q[i])
+                                                             verbose=verbose)
+                xs[i] = self.loadings[i] / np.sum(self.loadings[i])
 
             # add check to see if phi values are far apart enough
 

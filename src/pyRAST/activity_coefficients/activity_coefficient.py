@@ -20,7 +20,7 @@ class ActivityCoefficient:
     # Instance variables
     total_f: float | np.ndarray
     y: np.ndarray
-    comp_q: np.ndarray
+    loadings: np.ndarray
     isotherms: list
     model_parameters: dict
     model: str
@@ -46,7 +46,7 @@ class ActivityCoefficient:
             ActivityCoefficient._MODELS[model_name] = cls
 
     def __init__(self, total_f: np.ndarray | list | float, y: np.ndarray | list,
-                 comp_q: np.ndarray | list, isotherms: list, model: str, *,
+                 loadings: np.ndarray | list, isotherms: list, model: str, *,
                  c: float = 1, param_tol: float = 1e-4, gamma_tol: float = 1e-4,
                  max_iter: int = 100, param_mixing: float = 0.2,
                  verbose: bool = False,
@@ -61,20 +61,20 @@ class ActivityCoefficient:
             type: Description of return value
 
         """
-        # If total_f is a float, ensure y and comp_q are 1D
+        # If total_f is a float, ensure y and loadings are 1D
         if isinstance(total_f, (int, float)):
             total_f = float(total_f)
             if total_f <= 0:
                 raise ValueError('Total fugacity must be positive.')
-            if len(y) != len(comp_q):
-                raise ValueError('Length of y and comp_q must be the same.')
+            if len(y) != len(loadings):
+                raise ValueError('Length of y and loadings must be the same.')
             if not np.isclose(sum(y), 1.0):
                 raise ValueError('Gas phase mole fractions must sum to 1.0.')
-            if not all(q >= 0 for q in comp_q):
+            if not all(q >= 0 for q in loadings):
                 raise ValueError('Adsorbed phase loadings must be non-negative.')
             if len(isotherms) != len(y):
-                raise ValueError('Length of isotherms must match length of y and comp_q'
-                                 '.')
+                raise ValueError('Length of isotherms must match length of y and'
+                                 'loadings.')
             self.c = c
         # Multiple fugacity points provided as 2D arrays
         else:
@@ -83,21 +83,21 @@ class ActivityCoefficient:
                 if f <= 0:
                     raise ValueError('Total fugacity must be positive.')
             y = np.asarray(y)
-            comp_q = np.asarray(comp_q)
-            if y.shape != comp_q.shape:
-                raise ValueError('y and comp_q must have the same dimensions.')
+            loadings = np.asarray(loadings)
+            if y.shape != loadings.shape:
+                raise ValueError('y and loadings must have the same dimensions.')
             if not np.allclose(np.sum(y, axis=1), 1.0):
                 raise ValueError('All gas phase mole fractions must sum to 1.0.')
-            if not np.all(comp_q >= 0):
+            if not np.all(loadings >= 0):
                 raise ValueError('All adsorbed phase loadings must be non-negative.')
             if len(isotherms) != y.shape[1]:
                 raise ValueError('Length of isotherms must match number of components '
-                                 'in y and comp_q.')
+                                 'in y and loadings.')
 
         # Store data
         self.total_f = total_f
         self.y = np.asarray(y)
-        self.comp_q = np.asarray(comp_q)
+        self.loadings = np.asarray(loadings)
         self.isotherms = isotherms
 
         # Store model info

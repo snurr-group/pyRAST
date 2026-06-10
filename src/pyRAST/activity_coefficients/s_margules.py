@@ -33,10 +33,10 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
         """docstring"""
         if isinstance(self.total_f, float):
             # Handle the case where a single data point is provided, thus c is assumed
-            gamma, phi = self._gamma_from_loadings(self.comp_q, self.y, self.total_f,
+            gamma, phi = self._gamma_from_loadings(self.loadings, self.y, self.total_f,
                                                    excess_loading=excess_loading,
                                                    verbose=verbose)
-            x = self.comp_q / np.sum(self.comp_q)
+            x = self.loadings / np.sum(self.loadings)
             lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
             lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
             lhs = (lhs_0 + lhs_1) / 2.0
@@ -53,11 +53,11 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
             phi = np.zeros(points)
 
             for i in range(points):
-                gamma, phi[i] = self._gamma_from_loadings(self.comp_q[i], self.y[i],
+                gamma, phi[i] = self._gamma_from_loadings(self.loadings[i], self.y[i],
                                                           self.total_f[i],
                                                           excess_loading=excess_loading,
                                                           verbose=verbose)
-                x = self.comp_q[i] / np.sum(self.comp_q[i])
+                x = self.loadings[i] / np.sum(self.loadings[i])
                 lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
                 lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
                 lhs[i] = (lhs_0 + lhs_1) / 2.0
