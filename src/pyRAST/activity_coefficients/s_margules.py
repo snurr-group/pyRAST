@@ -31,9 +31,9 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
     def _fit_component_loadings(self, *, excess_loading: bool = False,
                                 verbose: bool = False):
         """docstring"""
-        if isinstance(self.total_f, float):
+        if self.loadings.shape[0] == 1:
             # Handle the case where a single data point is provided, thus c is assumed
-            gamma, phi = self._gamma_from_loadings(self.loadings, self.y, self.total_f,
+            gamma, phi = self._gamma_from_loadings(self.loadings, self.partial_fug,
                                                    excess_loading=excess_loading,
                                                    verbose=verbose)
             x = self.loadings / np.sum(self.loadings)
@@ -47,14 +47,13 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
         else:
             # Handle the case where multiple data points are provided
             # In this case, we can fit C and determine A as an analytical function
-            self.total_f = np.asarray(self.total_f) # fix pylance complaining
-            points = len(self.total_f)
+            points = len(self.partial_fug)
             lhs = np.zeros(points)
             phi = np.zeros(points)
 
             for i in range(points):
-                gamma, phi[i] = self._gamma_from_loadings(self.loadings[i], self.y[i],
-                                                          self.total_f[i],
+                gamma, phi[i] = self._gamma_from_loadings(self.loadings[i],
+                                                          self.partial_fug[i],
                                                           excess_loading=excess_loading,
                                                           verbose=verbose)
                 x = self.loadings[i] / np.sum(self.loadings[i])

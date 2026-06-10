@@ -18,8 +18,7 @@ class ActivityCoefficient:
     param_default_bounds: tuple
 
     # Instance variables
-    total_f: float | np.ndarray
-    y: np.ndarray
+    partial_fug: np.ndarray
     loadings: np.ndarray
     isotherms: list
     model_parameters: dict
@@ -30,7 +29,12 @@ class ActivityCoefficient:
     max_iter: int
 
     def __new__(cls, model: str = '', *args, **kwargs):
-        """docstring"""
+        """Creates an instance of the user-specified model.
+
+        This factory design pattern is identical to the model isotherms and allows
+        users to easily switch between different activity coefficient models. Users
+        should never interact with this method directly.
+        """
         if cls is ActivityCoefficient:
             if model not in cls._MODELS:
                 raise ValueError(f'{model} is not a valid model. Choose from'
@@ -40,87 +44,101 @@ class ActivityCoefficient:
         return super().__new__(cls)
 
     def __init_subclass__(cls, model_name: str = '', *args, **kwargs):
-        """docstring"""
+        """Registers subclasses of ModelIsotherm at import time.
+
+        Users should never interact with this method directly. To modify the list of
+        available models, edit the import statements in __init__.py.
+        """
         super().__init_subclass__(**kwargs)
         if model_name:
             ActivityCoefficient._MODELS[model_name] = cls
 
-    def __init__(self, total_f: np.ndarray | list | float, y: np.ndarray | list,
-                 loadings: np.ndarray | list, isotherms: list, model: str, *,
-                 total_loading: bool = False, c: float = 1, param_tol: float = 1e-4,
-                 gamma_tol: float = 1e-4, max_iter: int = 100,
+    def __init__(self, *, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
+                 isotherms: list, model: str, total_loading: bool = False, c: float = 1,
+                 param_tol: float = 1e-4, gamma_tol: float = 1e-4, max_iter: int = 100,
                  param_mixing: float = 0.2, verbose: bool = False,
                  assume_ideal_gamma: bool = False,
                  model_parameters: dict | None = None):
-        """ One line description
+        """Initializes an activity coefficient model.
+
+        Activity coefficient models are used in real adsorbed solution theory (RAST) to
+        account for non-ideal interactions between adsorbed species. This base class
+        provides the framework for fitting activity coefficient models from binary
+        mixture data. There are two ways to fit the model parameters:
+        1) Component loadings: If the user provides component loadings for each
+            adsorbed species at different total fugacities or gas phase compositions,
+            the model parameters will be fit using an iterative approach. In the default
+            mode, the model parameters are first fit assuming zero excess loading, and
+            then iteratively refit with excess loading correction until convergence.
+            Where possible, each model fits C and analytically solves for the other
+            parameters to reduce computation time. Activity coefficient models can be
+            fit using only a single data point and assuming a C value, or using 2+ data
+            points to fit C as well.If the user sets assume_ideal_gamma=True, the model
+            parameters will be fit assuming zero excess loading.
+        2) Total loading: If the user provides total loadings for different total
+            fugacities or gas phase compositions, the model parameters will be fit by
+            minimizing the residual between the predicted total loading from a RAST
+            calculation and the provided total loading. This approach is more
+            computationally intensive, but is useful for experimental data where
+            component loadings are difficult to measure. The user must provide at least
+            as many total loading data points as model parameters.
+
+        For a full discussion of the fitting procedure and the underlying equations,
+        see the documentation or paper discussion. Fitting activity coefficient
+        models can be challenging, and convergence depends on the quality of the data
+        and the choice of fitting options. If you have trouble fitting a model, try
+        adjusting the fitting tolerances or iterations.
+
+        Note: The current behavior is to print an error if model parameters do not
+        converge within max_iter iterations. Future versions may raise an exception
+        instead.
 
         Args:
-            param1(type): Description of param1
-
+            partial_fug (array-like): Partial fugacities of each component in
+                the gas phase.
+            y (array-like): Gas phase mole fractions of each component.
+            loadings (array-like): Adsorbed phase loadings of each component (or total
+                loading if total_loading=True).
+            isotherms (list): List of pure component isotherm objects for each
+                component.
+            model (str): Name of the activity coefficient model to use. Must be one of
+                the registered models in pyRAST.
+            total_loading (bool): If True, loadings are treated as total loadings for
+                fitting. If False (default), loadings are treated as component loadings.
+            c (float): Sets the value of C when fitting from a single data point with
+                component loadings. Default is 1.
+            param_tol (float): Tolerance for model parameter convergence in iterative
+                calculations and least-squares optimization. Default is 1e-4.
+            gamma_tol (float): Tolerance for activity coefficient convergence in the
+                inner loop of fitting using excess loading correction. Default is 1e-4.
+            max_iter (int): Maximum number of iterations for convergence in fitting
+                procedures. Default is 100.
+            param_mixing (float): Value between 0 and 1 to mix new and old parameters
+                for stability in iterative fitting with excess loading correction.
+                Increasing this value can make convergence faster, but may cause
+                oscillations. Default is 0.2 (i.e. new parameters are weighted 20%).
+            verbose (bool): If True, prints model parameters at each iteration and
+                convergence information during fitting procedures. Default is False.
+            assume_ideal_gamma (bool): If True, fits model parameters assuming zero
+                excess loading. This can be faster but leads to less accurate
+                parameters. Default is False.
+            model_parameters (dict): Optional dictionary of model parameters to use
+                instead of fitting. Keys must match the parameter names for the specific
+                model. If provided, all other fitting options are ignored.
         Returns:
-            type: Description of return value
-
+            None: Model parameters are stored in self.model_parameters.
+        Raises:
+            ValueError: If input data is invalid (e.g. negative loadings, mole fractions
+                that don't sum to 1, mismatched lengths of input arrays, etc.) or if
+                model_parameters keys don't match expected parameter names.
+            RuntimeError: If certain fitting procedures fail to converge.
         """
         # CLEAN THIS UP
        # Validate inputs when component loadings are provided
-        if not total_loading:
-            # If total_f is a float, ensure y and loadings are 1D
-            if isinstance(total_f, (int, float)):
-                total_f = float(total_f)
-                if total_f <= 0:
-                    raise ValueError('Total fugacity must be positive.')
-                if len(y) != len(loadings):
-                    raise ValueError('Length of y and loadings must be the same.')
-                if not np.isclose(sum(y), 1.0):
-                    raise ValueError('Gas phase mole fractions must sum to 1.0.')
-                if not all(q >= 0 for q in loadings):
-                    raise ValueError('Adsorbed phase loadings must be non-negative.')
-                if len(isotherms) != len(y):
-                    raise ValueError('Length of isotherms must match length of y and'
-                                        'loadings.')
-                self.c = c
-            # Multiple fugacity points provided as 2D arrays
-            else:
-                total_f = np.asarray(total_f, dtype=float)
-                for f in total_f:
-                    if f <= 0:
-                        raise ValueError('Total fugacity must be positive.')
-                y = np.asarray(y)
-                loadings = np.asarray(loadings)
-                if y.shape != loadings.shape:
-                    raise ValueError('y and loadings must have the same dimensions.')
-                if not np.allclose(np.sum(y, axis=1), 1.0):
-                    raise ValueError('All gas phase mole fractions must sum to 1.0.')
-                if not np.all(loadings >= 0):
-                    raise ValueError('All adsorbed phase loadings must be'
-                                     'non-negative.')
-                if len(isotherms) != y.shape[1]:
-                    raise ValueError('Length of isotherms must match number of'
-                                     'components in y and loadings.')
-        # Validate inputs when total loading is used
-        else:
-            total_f = np.asarray(total_f, dtype=float)
-            for f in total_f:
-                if f <= 0:
-                    raise ValueError('Total fugacity must be positive.')
-            y = np.asarray(y)
-            loadings = np.asarray(loadings)
-            if y.shape[0] != loadings.shape[0]:
-                raise ValueError('Length of y and loadings must be the same.')
-            if not np.allclose(np.sum(y, axis=1), 1.0):
-                raise ValueError('All gas phase mole fractions must sum to 1.0.')
-            if not np.all(loadings >= 0):
-                raise ValueError('All adsorbed phase loadings must be non-negative.')
-            if len(isotherms) != y.shape[1]:
-                raise ValueError('Length of isotherms must match number of'
-                                 'components in y and loadings.')
-            if len(self.param_names) > total_f.shape[0]:
-                raise ValueError('Number of model parameters must be at least equal'
-                                 ' to number of total loading points.')
+
 
         # Store data
-        self.total_f = total_f
-        self.y = np.asarray(y)
+        self.partial_fug = np.asarray(partial_fug)
         self.loadings = np.asarray(loadings)
         self.isotherms = isotherms
 
@@ -155,19 +173,32 @@ class ActivityCoefficient:
                 f'{self.model_parameters}')
 
     def ln_gamma(self, x, phi):
-        """Calculates natural log of activity coefficients."""
+        """Calculates natural log of activity coefficients.
+
+        This method is implemented in every subclass for the specific model.
+        """
         raise NotImplementedError('ln_gamma method must be implemented in subclass.')
 
     def gamma(self, x, phi):
-        """Calculates activity coefficients (gamma) from ln_gamma."""
+        """Calculates activity coefficients (gamma) from ln_gamma.
+
+        Args:
+            x (array-like): Mole fractions of components in the adsorbed phase.
+            phi (float): Spreading pressure.
+        Returns:
+            np.ndarray: Activity coefficients for each component.
+        """
         return np.exp(self.ln_gamma(x, phi))
 
     def inverse_excess_loading(self, x, phi):
-        """Calculates inverse excess loading."""
+        """Calculates inverse excess loading.
+
+        This method is implemented in every subclass for the specific model.
+        """
         raise NotImplementedError('inverse_excess_loading method must be implemented '
                                   'in subclass.')
 
-    def _gamma_from_loadings(self, comp_q, y, total_f, *, excess_loading = False,
+    def _gamma_from_loadings(self, comp_q, partial_fug, *, excess_loading = False,
                              verbose: bool = False):
         """docstring"""
         # Calculate important variables for determining gamma and phi
@@ -188,7 +219,7 @@ class ActivityCoefficient:
         def _bracket_phi(residuals, q_excess = 0.0, phi_low = 1e-12, phi_high = 1.0,
                          max_expand = 60, phi_cap = np.inf):
             # Determine the maximum phi based on isotherm extrapolation limits
-            def _phi_cap_for_isotherm(iso, total_f):
+            def _phi_cap_for_isotherm(iso):
                 if isinstance(iso, InterpolatorIsotherm):
                     if iso.extrap_method is not None or iso.fill_value is not None:
                         return iso.extrap_p
@@ -202,7 +233,7 @@ class ActivityCoefficient:
                 return np.inf
 
             # Compute the cap if there is one
-            caps = [_phi_cap_for_isotherm(iso, total_f) for iso in self.isotherms]
+            caps = [_phi_cap_for_isotherm(iso) for iso in self.isotherms]
             phi_cap = min(caps) if any(np.isfinite(caps)) else np.inf
 
             # Check lower limit to ensure we don't start with an invalid point
@@ -249,7 +280,7 @@ class ActivityCoefficient:
         # Calculate gamma from loadings and phi without excess loading correction
         for i in range(len(self.isotherms)):
             p0[i] = self.isotherms[i].p0(phi_sol)
-        gamma = (y * total_f) / (p0 * x)
+        gamma = partial_fug / (p0 * x)
         if not excess_loading:
             return gamma, phi_sol
 
@@ -267,18 +298,10 @@ class ActivityCoefficient:
             # Calculate new gamma
             for i in range(len(self.isotherms)):
                 p0[i] = self.isotherms[i].p0(phi_sol)
-            gamma = (y * total_f) / (p0 * x)
-
-            # Print convergence info if verbose
-            # This is off for now, it is not super informative.
-            # if verbose:
-            #     print(f'Excess loading correction loop: iteration {iteration + 1}, '
-            #           f'phi: {phi_sol}, gamma: {gamma}')
+            gamma = partial_fug / (p0 * x)
 
             # Check convergence
             if np.all(np.abs(gamma - gamma_old) < self.gamma_tol):
-                # if verbose:
-                #     print(f'Gamma converged after {iteration + 1} iterations.')
                 break
         # If we reach max iterations without convergence, print warning
         else:
@@ -288,13 +311,26 @@ class ActivityCoefficient:
 
     def _fit_component_loadings(self, *, excess_loading: bool = False,
                                       verbose: bool = False):
-        """docstring"""
+        """Fit activity coefficient model parameters to component loadings.
+
+        This method is implemented in every subclass for the specific model.
+        """
         return NotImplementedError('_fit_component_loadings method must be'
                                    'implemented in subclass.')
 
     def _fit_real_component_loadings(self, param_mixing: float, *,
                                      verbose: bool = False):
-        """docstring"""
+        """Fits model parameters to component loadings with excess loading correction.
+
+        DESCRIPTION
+        Args:
+            param_mixing (float): Value between 0 and 1 to mix new and old parameters
+                                  for stability.
+            verbose (bool): If True, prints model parameters at each iteration and
+                            convergence information.
+        Returns:
+            None: Model parameters are stored in self.model_parameters.
+        """
         # First pass for model parameters is use ideal case
         self._fit_component_loadings(verbose=verbose)
 
@@ -328,12 +364,22 @@ class ActivityCoefficient:
             print('Model parameters did not converge.')
 
     def _fit_total_loading(self, *, verbose: bool = False):
-        """docstring"""
+        """Fits model parameters to total loading data.
+
+        DESCRIPTION
+        Args:
+            verbose (bool): If True, prints model parameters at each iteration and
+                            convergence information.
+        Returns:
+            None: Model parameters are stored in self.model_parameters.
+        Raises:
+            RuntimeError: If the fit to total loading fails to converge.
+        """
         # Import RAST here to avoid circular import issues
         from pyrast.calculations.rast import rast
 
-        total_f = np.asarray(self.total_f)
-        points = len(total_f)
+        partial_fug = np.asarray(self.partial_fug)
+        points = len(partial_fug)
 
         def residuals(params):
             # Assign parameters to model
@@ -344,7 +390,7 @@ class ActivityCoefficient:
                 print(self.model_parameters)
             res = np.zeros(points)
             for i in range(points):
-                q_total_pred = np.sum(rast(total_f[i] * self.y[i], self.isotherms,
+                q_total_pred = np.sum(rast(partial_fug[i], self.isotherms,
                                            self))
                 res[i] = q_total_pred - self.loadings[i]
             return res
