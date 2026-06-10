@@ -223,7 +223,28 @@ class ActivityCoefficient:
 
     def _gamma_from_loadings(self, comp_q, partial_fug, *, excess_loading = False,
                              verbose: bool = False):
-        """docstring"""
+        """Calculates gamma and phi from component loadings and partial fugacities.
+
+        This method is used in the fitting procedure when component loadings are
+        provided. It solves for the spreading pressure (phi) that corresponds to the
+        provided loadings and partial fugacities, and then calculates the activity
+        coefficients (gamma) from those values. If excess_loading is True, the
+        spreading pressure calculation includes the excess loading correction in an
+        iterative routine. It is designed to handle one point of binary data at a time.
+
+        Args:
+            comp_q (array-like): Component loadings for one data point.
+            partial_fug (array-like): Partial fugacities for one data point.
+            excess_loading (bool): If True, applies excess loading correction to phi
+                calculation. Default is False.
+            verbose (bool): If True, prints convergence information during iterative
+                fitting with excess loading correction. Default is False.
+        Returns:
+            gamma (np.ndarray): Activity coefficients for each component.
+            phi (float): Spreading pressure for mixture.
+        Raises:
+            ValueError: If a valid bracket cannot be found for root finding phi.
+        """
         # Calculate important variables for determining gamma and phi
         q_total = sum(comp_q)
         x = comp_q / q_total
@@ -345,12 +366,18 @@ class ActivityCoefficient:
                                      verbose: bool = False):
         """Fits model parameters to component loadings with excess loading correction.
 
-        DESCRIPTION
+        This method implements the outer loop of the iterative fitting procedure for
+        activity coefficients when component loadings are provided. It first fits the
+        model parameters using the ideal approach, and then iteratively refits the
+        parameters with excess loading correction until convergence. The param_mixing
+        value helps with stability by mixing the old and new parameters at each
+        iteration.
+
         Args:
             param_mixing (float): Value between 0 and 1 to mix new and old parameters
-                                  for stability.
+                for stability.
             verbose (bool): If True, prints model parameters at each iteration and
-                            convergence information.
+                convergence information.
         Returns:
             None: Model parameters are stored in self.model_parameters.
         """
@@ -389,7 +416,17 @@ class ActivityCoefficient:
     def _fit_total_loading(self, *, verbose: bool = False):
         """Fits model parameters to total loading data.
 
-        DESCRIPTION
+        This method fits the model parameters to the total loading data by minimizing
+        the difference between the predicted and observed total loadings. It uses a
+        least-squares approach to find the optimal parameters. At each step, the
+        model parameters are updated and used in a RAST calculation to predict the total
+        loading.
+
+        Note: Using total loading data can be less reliable for fitting activity
+        coefficient models as multiple combinations of parameters can give similar total
+        loading predictions. Only use this method if you do not have component loading
+        data available.
+
         Args:
             verbose (bool): If True, prints model parameters at each iteration and
                             convergence information.

@@ -4,6 +4,7 @@ Activity Coefficients
 
 .. autoclass:: pyrast.activity_coefficients.ActivityCoefficient
     :members:
+    :private-members:
 
 .. autoclass:: pyrast.activity_coefficients.SMargules
     :members:
