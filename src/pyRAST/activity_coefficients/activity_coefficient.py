@@ -16,6 +16,7 @@ class ActivityCoefficient:
     name: str = ''
     param_names: tuple
     param_default_bounds: tuple
+    param_ideal_values: tuple
 
     # Instance variables
     partial_fug: np.ndarray
@@ -61,9 +62,11 @@ class ActivityCoefficient:
 
     def __init__(self, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
                  isotherms: list, model: str, *, total_loading: bool = False,
-                 c: float = 1, param_tol: float = 1e-4, gamma_tol: float = 1e-4,
+                 c: float = 1, param_tol: float = 1e-6, gamma_tol: float = 1e-4,
                  max_iter: int = 100, param_mixing: float = 0.2, verbose: bool = False,
-                 assume_ideal_gamma: bool = False,
+                 assume_ideal_gamma: bool = False, param_guess: dict | None = None,
+                 param_bounds: dict | None = None,
+                 optimization_options: dict | None = None,
                  model_parameters: dict | None = None):
         """Initializes an activity coefficient model.
 
@@ -113,7 +116,7 @@ class ActivityCoefficient:
             c (float): Sets the value of C when fitting from a single data point with
                 component loadings. Default is 1.
             param_tol (float): Tolerance for model parameter convergence in iterative
-                calculations and least-squares optimization. Default is 1e-4.
+                calculations and least-squares optimization. Default is 1e-6.
             gamma_tol (float): Tolerance for activity coefficient convergence in the
                 inner loop of fitting using excess loading correction. Default is 1e-4.
             max_iter (int): Maximum number of iterations for convergence in fitting
@@ -151,7 +154,7 @@ class ActivityCoefficient:
         if total_loading and partial_fug.shape[0] != loadings.shape[0]:
             raise ValueError('Arrays for partial fugacities and total loadings must'
                              'have the same number of data points.')
-        if partial_fug.shape[1] != 2:
+        if partial_fug.ndim == 2 and partial_fug.shape[1] != 2:
             raise ValueError('This activity coefficient model is currently only '
                             'implemented for binary mixtures (2 components). '
                             'Your arrays must have shape (n, 2) where n is the '
@@ -165,6 +168,7 @@ class ActivityCoefficient:
         self.partial_fug = partial_fug
         self.loadings = loadings
         self.isotherms = isotherms
+        self.c = c
 
         # Store model info
         self.model = model
@@ -173,6 +177,21 @@ class ActivityCoefficient:
         self.param_tol = param_tol
         self.gamma_tol = gamma_tol
         self.max_iter = max_iter
+
+        # Handle parameter guess and bounds
+        self.param_bounds = dict(zip(self.param_names, self.param_default_bounds))
+        if param_bounds is not None:
+            if set(param_bounds.keys()) != set(self.param_names):
+                raise ValueError(f'param_bounds keys must be {self.param_names}.')
+            self.param_bounds = param_bounds
+
+        self.param_guess = dict(zip(self.param_names, self.param_ideal_values +
+                                                      (self.c,)))
+        if param_guess is not None:
+            if set(param_guess.keys()) != set(self.param_names):
+                raise ValueError(f'param_guess keys must be {self.param_names}.')
+            self.param_guess = param_guess
+        self.param_guess = self.enforce_parameter_bounds(self.param_guess)
 
         # Fit model to data
         # If user provided parameters, check that keys are correct
@@ -183,17 +202,37 @@ class ActivityCoefficient:
         elif not total_loading:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
             if assume_ideal_gamma:
-                self._fit_component_loadings(verbose=verbose)
+                excess_loading = False
+                self._fit_component_loadings(excess_loading, verbose,
+                                             optimization_options)
             else:
-                self._fit_real_component_loadings(param_mixing, verbose=verbose)
+                self._fit_real_component_loadings(param_mixing, verbose,
+                                                  optimization_options)
         else:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
-            self._fit_total_loading()
+            self._fit_total_loading(verbose, optimization_options)
 
     def __repr__(self):
         """String representation of activity coefficient model."""
         return (f'{self.name} activity coefficient model with parameters: '
                 f'{self.model_parameters}')
+
+    def enforce_parameter_bounds(self, guess):
+        """Enforces parameter bounds on the initial guess.
+
+        Args:
+            guess (dict): Initial guess for model parameters.
+
+        Returns:
+            dict: Guess with parameters enforced within bounds.
+        """
+        for param, value in guess.items():
+            bounds = self.param_bounds[param]
+            if value < bounds[0]:
+                guess[param] = bounds[0]
+            elif value > bounds[1]:
+                guess[param] = bounds[1]
+        return guess
 
     def ln_gamma(self, x, phi):
         """Calculates natural log of activity coefficients.
@@ -221,8 +260,7 @@ class ActivityCoefficient:
         raise NotImplementedError('inverse_excess_loading method must be implemented '
                                   'in subclass.')
 
-    def _gamma_from_loadings(self, comp_q, partial_fug, *, excess_loading = False,
-                             verbose: bool = False):
+    def _gamma_from_loadings(self, comp_q, partial_fug, excess_loading):
         """Calculates gamma and phi from component loadings and partial fugacities.
 
         This method is used in the fitting procedure when component loadings are
@@ -353,17 +391,109 @@ class ActivityCoefficient:
 
         return gamma, phi_sol
 
-    def _fit_component_loadings(self, *, excess_loading: bool = False,
-                                      verbose: bool = False):
-        """Fit activity coefficient model parameters to component loadings.
+    def _fit_component_loadings(self, excess_loading, verbose, optimization_options):
+        """docstring"""
 
-        This method is implemented in every subclass for the specific model.
-        """
-        return NotImplementedError('_fit_component_loadings method must be'
-                                   'implemented in subclass.')
+        if self.loadings.ndim == 1:
+            # Handle the case where a single data point is provided, thus c is assumed
+            gamma, phi = self._gamma_from_loadings(self.loadings, self.partial_fug,
+                                                   excess_loading)
+            x = self.loadings / np.sum(self.loadings)
+            c = self.c
+            ln_g = np.log(gamma)
 
-    def _fit_real_component_loadings(self, param_mixing: float, *,
-                                     verbose: bool = False):
+            # Set c and solve for the other model parameters with bounds
+            self.model_parameters['C'] = c
+            def single_residuals(p):
+                for i in range(len(self.param_names)-1):
+                    self.model_parameters[self.param_names[i]] = p[i]
+                ln_gamma = self.ln_gamma(x, phi)
+                return ln_gamma - ln_g
+
+            # Get initial guess
+            guess = list(self.param_guess.values())[:-1]
+
+            # Get parameter bounds
+            bounds = [[self.param_bounds[param][0] for param in self.param_names[:-1]],
+                      [self.param_bounds[param][1] for param in self.param_names[:-1]]]
+
+            fitting_inputs = {
+                'fun': single_residuals,
+                'x0': guess,
+                'bounds': bounds,
+                'xtol': self.param_tol,
+            }
+            if optimization_options is not None:
+                fitting_inputs.update(optimization_options)
+            sol = least_squares(**fitting_inputs)
+
+            if not sol.success:
+                raise RuntimeError(f'{self.name} model parameter fit failed with '
+                                   f'message: {sol.message} Try a different initial '
+                                   'guess or check data quality.')
+
+            # Save parameters
+            for i in range(len(self.param_names)-1):
+                self.model_parameters[self.param_names[i]] = sol.x[i]
+        else:
+            # Handle the case where multiple data points are provided
+            # In this case, we fit all parameters simultaneously using least squares
+            points = len(self.partial_fug)
+            gamma = np.zeros((points, 2))
+            phi = np.zeros(points)
+            xs = np.zeros((points, 2))
+
+            for i in range(points):
+                gamma[i], phi[i] = self._gamma_from_loadings(self.loadings[i],
+                                                             self.partial_fug[i],
+                                                             excess_loading)
+                xs[i] = self.loadings[i] / np.sum(self.loadings[i])
+
+            # Solve for all model parameters simultaneously with least squares
+            def residuals(params):
+                for i in range(len(self.param_names)):
+                    self.model_parameters[self.param_names[i]] = params[i]
+
+                res = np.zeros(points * 2)
+                for i in range(points):
+                    ln_gamma_pred = self.ln_gamma(xs[i], phi[i])
+                    ln_gamma_exp = np.log(gamma[i])
+                    res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
+                return res
+
+            # Build initial guess for least squares based on ideal case
+            guess = list(self.param_guess.values())
+            print(guess)
+
+            # Enforce parameter bounds
+            bounds = [[self.param_bounds[param][0] for param in self.param_names],
+                      [self.param_bounds[param][1] for param in self.param_names]]
+
+            fitting_inputs = {
+                'fun': residuals,
+                'x0': guess,
+                'bounds': bounds,
+                'xtol': self.param_tol,
+            }
+            if optimization_options is not None:
+                fitting_inputs.update(optimization_options)
+            res = least_squares(**fitting_inputs)
+            if not res.success:
+                raise RuntimeError(f'{self.name} model parameter fit failed with '
+                                   f'message: {res.message} Try a different initial '
+                                   'guess for c or check data quality.')
+
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')
+                print(f'Residual norm: {res.cost}')
+
+            # Save parameters
+            for i in range(len(self.param_names)):
+                self.model_parameters[self.param_names[i]] = res.x[i]
+
+    def _fit_real_component_loadings(self, param_mixing: float, verbose,
+                                     optimization_options):
         """Fits model parameters to component loadings with excess loading correction.
 
         This method implements the outer loop of the iterative fitting procedure for
@@ -382,13 +512,15 @@ class ActivityCoefficient:
             None: Model parameters are stored in self.model_parameters.
         """
         # First pass for model parameters is use ideal case
-        self._fit_component_loadings(verbose=verbose)
+        excess_loading = False
+        self._fit_component_loadings(excess_loading, verbose, optimization_options)
 
         # Now we want to iteratively get more accurate model parameters
         for iteration in range(self.max_iter):
             # Copy old parameters
             params_old = self.model_parameters.copy()
-            self._fit_component_loadings(excess_loading=True, verbose=verbose)
+            excess_loading = True
+            self._fit_component_loadings(excess_loading, verbose, optimization_options)
 
             # Mix new and old parameters to improve stability
             params_new = self.model_parameters.copy()
@@ -413,7 +545,7 @@ class ActivityCoefficient:
         else:
             print('Model parameters did not converge.')
 
-    def _fit_total_loading(self, *, verbose: bool = False):
+    def _fit_total_loading(self, verbose, optimization_options):
         """Fits model parameters to total loading data.
 
         This method fits the model parameters to the total loading data by minimizing
@@ -455,15 +587,22 @@ class ActivityCoefficient:
                 res[i] = q_total_pred - self.loadings[i]
             return res
 
-        # Assign initial guess for parameters (C=1, zeros for other parameters)
-        initial_guess = [1e-12] * (len(self.param_names) - 1) + [1.0]
+        # Assign initial guess for parameters
+        initial_guess = list(self.param_guess.values())
 
         # Enforce parameter bounds
-        lower_bounds = [bound[0] for bound in self.param_default_bounds]
-        upper_bounds = [bound[1] for bound in self.param_default_bounds]
+        bounds = [[self.param_bounds[param][0] for param in self.param_names],
+                  [self.param_bounds[param][1] for param in self.param_names]]
 
-        res = least_squares(residuals, x0=initial_guess, xtol=self.param_tol,
-                            ftol=self.param_tol, bounds=(lower_bounds, upper_bounds))
+        fitting_inputs = {
+            'fun': residuals,
+            'x0': initial_guess,
+            'bounds': bounds,
+            'xtol': self.param_tol,
+        }
+        if optimization_options is not None:
+            fitting_inputs.update(optimization_options)
+        res = least_squares(**fitting_inputs)
 
         if not res.success:
             raise RuntimeError(f'Total loading fit failed: {res.message}. Try a '
@@ -473,4 +612,3 @@ class ActivityCoefficient:
         num_params = len(self.param_names)
         self.model_parameters = {self.param_names[i]: res.x[i]
                                  for i in range(num_params)}
-

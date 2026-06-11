@@ -1,7 +1,6 @@
 """Implementation of Symmetric Margules Model"""
 
 import numpy as np
-from scipy.optimize import least_squares
 
 from pyrast.activity_coefficients.activity_coefficient import ActivityCoefficient
 
@@ -27,6 +26,7 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
     name = 'sMargules'
     param_names = ('A', 'C')
     param_default_bounds = ((-np.inf, np.inf), (0.0, np.inf))
+    param_ideal_values = (0.0,)
 
     def ln_gamma(self, x, phi):
         r"""Calculates the natural log of the activity coefficients for each component.
@@ -63,71 +63,3 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
         """
         return self.model_parameters['A'] * self.model_parameters['C'] * x[0] * x[1] * \
                np.exp(-self.model_parameters['C'] * phi)
-
-    def _fit_component_loadings(self, *, excess_loading: bool = False,
-                                verbose: bool = False):
-        """docstring"""
-        if self.loadings.shape[0] == 1:
-            # Handle the case where a single data point is provided, thus c is assumed
-            gamma, phi = self._gamma_from_loadings(self.loadings, self.partial_fug,
-                                                   excess_loading=excess_loading,
-                                                   verbose=verbose)
-            x = self.loadings / np.sum(self.loadings)
-            lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
-            lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
-            lhs = (lhs_0 + lhs_1) / 2.0
-            c = self.c
-            correction = 1.0 - np.exp(-c * phi)
-            self.model_parameters = {'A': lhs / correction, 'C': c}
-
-        else:
-            # Handle the case where multiple data points are provided
-            # In this case, we can fit C and determine A as an analytical function
-            points = len(self.partial_fug)
-            lhs = np.zeros(points)
-            phi = np.zeros(points)
-
-            for i in range(points):
-                gamma, phi[i] = self._gamma_from_loadings(self.loadings[i],
-                                                          self.partial_fug[i],
-                                                          excess_loading=excess_loading,
-                                                          verbose=verbose)
-                x = self.loadings[i] / np.sum(self.loadings[i])
-                lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
-                lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
-                lhs[i] = (lhs_0 + lhs_1) / 2.0
-
-                # Warn if effective A values from each component differ by more than 10%
-                if ((np.abs(lhs_0 - lhs_1) / np.mean([np.abs(lhs_0), np.abs(lhs_1)]))
-                    > 0.1):
-                    print('Warning: Effective A values from each component differ by '
-                          'more than 10%. This may indicate poor data quality or that'
-                          ' the model is not appropriate for this system.')
-
-            # Check that phi values are sufficiently different to fit parameters
-            if np.max(phi) - np.min(phi) < 1e-4:
-                raise ValueError('Phi values are too close together to reliably fit'
-                                 'parameters. Try providing data with a wider range '
-                                 'of spreading pressures.')
-
-            # Fit C by minimizing least squares
-            def residuals(c):
-                f = phi if c <= 1e-6 else (1.0 - np.exp(-c * phi))
-                a = np.dot(lhs, f) / np.dot(f, f)
-                return a * f - lhs
-
-            res = least_squares(residuals, x0=1.0, bounds=(0, np.inf),
-                                xtol=self.param_tol)
-            c_fit = res.x[0]
-            f_fit = phi if c_fit <= 1e-6 else (1.0 - np.exp(-c_fit * phi))
-            a_fit = np.dot(lhs, f_fit) / np.dot(f_fit, f_fit)
-
-            # Print residuals if verbose
-            if verbose:
-                print(f'Fitted parameters: A={a_fit}, C={c_fit}')
-                print(f'Residual norm: {res.cost}')
-
-            self.model_parameters = {'A': a_fit, 'C': c_fit}
-
-
-

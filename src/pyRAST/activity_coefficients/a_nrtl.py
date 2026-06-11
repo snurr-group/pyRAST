@@ -1,7 +1,6 @@
 """Implementation of Asymmetric NRTL Model"""
 
 import numpy as np
-from scipy.optimize import least_squares, root
 
 from pyrast.activity_coefficients.activity_coefficient import ActivityCoefficient
 
@@ -29,7 +28,8 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
     # Class variables for every instance
     name = 'aNRTL'
     param_names = ('t12', 'C')
-    param_default_bounds = ((np.inf, np.inf), (0.0, np.inf))
+    param_default_bounds = ((-np.inf, np.inf), (0.0, np.inf))
+    param_ideal_values = (1.0,)
     alpha = 0.3
 
     def ln_gamma(self, x, phi):
@@ -82,80 +82,3 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
 
         return c * x[0] * x[1] * t12 * (g12 - 1.0) * np.exp(-c * phi) / \
                (x[0]*g12 + x[1])
-
-    def _fit_component_loadings(self, *, excess_loading: bool = False,
-                                verbose: bool = False):
-        """docstring"""
-        if self.loadings.shape[0] == 1:
-            # Handle the case where a single data point is provided, thus c is assumed
-            gamma, phi = self._gamma_from_loadings(self.loadings, self.partial_fug,
-                                                   excess_loading=excess_loading,
-                                                   verbose=verbose)
-            x = self.loadings / np.sum(self.loadings)
-            c = self.c
-            ln_g = np.log(gamma)
-
-            def equations(p):
-                t12 = p[0]
-                self.model_parameters = {'t12': t12, 'C': c}
-                ln_gamma = self.ln_gamma(x, phi)
-                return ln_gamma - ln_g
-
-            sol = root(equations, x0=[1.0], method='hybr', tol=1e-10)
-
-            if not sol.success:
-                raise ValueError(
-                    f"aNRTL parameter fit failed: {sol.message}. "
-                    "Try a different initial guess or check data quality.",
-                )
-
-            t12 = sol.x[0]
-            self.model_parameters = {'t12': t12, 'C': c}
-        else:
-            # Handle the case where multiple data points are provided
-            # In this case, we fit all parameters simultaneously using least squares
-            points = len(self.partial_fug)
-            gamma = np.zeros((points, 2))
-            phi = np.zeros(points)
-            xs = np.zeros((points, 2))
-
-            for i in range(points):
-                gamma[i], phi[i] = self._gamma_from_loadings(self.loadings[i],
-                                                             self.partial_fug[i],
-                                                          excess_loading=excess_loading,
-                                                             verbose=verbose)
-                xs[i] = self.loadings[i] / np.sum(self.loadings[i])
-
-            # Check that phi values are sufficiently different to fit parameters
-            if np.max(phi) - np.min(phi) < 1e-4:
-                raise ValueError('Phi values are too close together to reliably fit'
-                                 'parameters. Try providing data with a wider range '
-                                 'of spreading pressures.')
-
-            def residuals(params):
-                t12 = params[0]
-                c = params[1]
-                self.model_parameters = {'t12': t12, 'C': c}
-
-                res = np.zeros(points * 2)
-                for i in range(points):
-                    ln_gamma_pred = self.ln_gamma(xs[i], phi[i])
-                    ln_gamma_exp = np.log(gamma[i])
-                    res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
-                return res
-
-            res = least_squares(residuals, x0=[0.1, 1.0], xtol=self.param_tol)
-            if not res.success:
-                raise ValueError(
-                    f"aNRTL parameter fit failed: {res.message}. "
-                    "Try a different initial guess or check data quality.",
-                )
-
-            # Print residuals if verbose
-            if verbose:
-                print(f'Fitted parameters: t12={res.x[0]}, C={res.x[1]}')
-                print(f'Residual norm: {res.cost}')
-
-            t12, c = res.x[0], res.x[1]
-            self.model_parameters = {'t12': t12, 'C': c}
-
