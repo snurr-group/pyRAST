@@ -145,6 +145,11 @@ class SNRTL(ActivityCoefficient, model_name='sNRTL'):
                     "Try a different initial guess or check data quality.",
                 )
 
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: t12={res.x[0]}, C={res.x[1]}')
+                print(f'Residual norm: {res.cost}')
+
             t12, c = res.x[0], res.x[1]
             self.model_parameters = {'t12': t12, 'C': c}
 

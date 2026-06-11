@@ -96,9 +96,19 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
                 lhs_0 = np.log(gamma[0]) / (x[1] ** 2)
                 lhs_1 = np.log(gamma[1]) / (x[0] ** 2)
                 lhs[i] = (lhs_0 + lhs_1) / 2.0
-                # maybe add warning if lhs_0 very differnet from lhs_1
 
-            # add check to see if phi values are far apart enough
+                # Warn if effective A values from each component differ by more than 10%
+                if ((np.abs(lhs_0 - lhs_1) / np.mean([np.abs(lhs_0), np.abs(lhs_1)]))
+                    > 0.1):
+                    print('Warning: Effective A values from each component differ by '
+                          'more than 10%. This may indicate poor data quality or that'
+                          ' the model is not appropriate for this system.')
+
+            # Check that phi values are sufficiently different to fit parameters
+            if np.max(phi) - np.min(phi) < 1e-4:
+                raise ValueError('Phi values are too close together to reliably fit'
+                                 'parameters. Try providing data with a wider range '
+                                 'of spreading pressures.')
 
             # Fit C by minimizing least squares
             def residuals(c):
@@ -112,7 +122,10 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
             f_fit = phi if c_fit <= 1e-6 else (1.0 - np.exp(-c_fit * phi))
             a_fit = np.dot(lhs, f_fit) / np.dot(f_fit, f_fit)
 
-            # maybe check residuals here to be safe
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: A={a_fit}, C={c_fit}')
+                print(f'Residual norm: {res.cost}')
 
             self.model_parameters = {'A': a_fit, 'C': c_fit}
 

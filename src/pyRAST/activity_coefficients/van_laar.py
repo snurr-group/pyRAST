@@ -135,6 +135,9 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
             a12_fit = np.dot(a12_effs, f_fit) / denom
             a21_fit = np.dot(a21_effs, f_fit) / denom
 
-            # maybe check residuals here to be safe
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: A12={a12_fit}, A21={a21_fit}, C={c_fit}')
+                print(f'Residual norm: {res.cost}')
 
             self.model_parameters = {'A12': a12_fit, 'A21': a21_fit, 'C': c_fit}

@@ -126,6 +126,12 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
                                                              verbose=verbose)
                 xs[i] = self.loadings[i] / np.sum(self.loadings[i])
 
+            # Check that phi values are sufficiently different to fit parameters
+            if np.max(phi) - np.min(phi) < 1e-4:
+                raise ValueError('Phi values are too close together to reliably fit'
+                                 'parameters. Try providing data with a wider range '
+                                 'of spreading pressures.')
+
             def residuals(params):
                 t12 = params[0]
                 c = params[1]
@@ -144,6 +150,11 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
                     f"aNRTL parameter fit failed: {res.message}. "
                     "Try a different initial guess or check data quality.",
                 )
+
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: t12={res.x[0]}, C={res.x[1]}')
+                print(f'Residual norm: {res.cost}')
 
             t12, c = res.x[0], res.x[1]
             self.model_parameters = {'t12': t12, 'C': c}

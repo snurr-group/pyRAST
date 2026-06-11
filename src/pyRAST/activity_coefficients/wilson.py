@@ -140,6 +140,12 @@ class Wilson(ActivityCoefficient, model_name='Wilson'):
                     "Try a different initial guess or check data quality.",
                 )
 
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: L12={np.exp(res.x[0])}, '
+                      'L21={np.exp(res.x[1])}, C={res.x[2]}')
+                print(f'Residual norm: {res.cost}')
+
             l12, l21, c = np.exp(res.x[0]), np.exp(res.x[1]), res.x[2]
             self.model_parameters = {'L12': l12, 'L21': l21, 'C': c}
 

@@ -104,7 +104,11 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
                                                              verbose=verbose)
                 xs[i] = self.loadings[i] / np.sum(self.loadings[i])
 
-            # add check to see if phi values are far apart enough
+            # Check that phi values are sufficiently different to fit parameters
+            if np.max(phi) - np.min(phi) < 1e-4:
+                raise ValueError('Phi values are too close together to reliably fit'
+                                 'parameters. Try providing data with a wider range '
+                                 'of spreading pressures.')
 
             # Define "effective parameters" to get solutions as function of c
             def effective_parameters(i):
@@ -139,6 +143,9 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
             a12_fit = np.dot(a12_effs, f_fit) / denom
             a21_fit = np.dot(a21_effs, f_fit) / denom
 
-            # maybe check residuals here to be safe
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: A12={a12_fit}, A21={a21_fit}, C={c_fit}')
+                print(f'Residual norm: {res.cost}')
 
             self.model_parameters = {'A12': a12_fit, 'A21': a21_fit, 'C': c_fit}
