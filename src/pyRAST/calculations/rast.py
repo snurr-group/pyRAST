@@ -42,8 +42,10 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
         phi_guess (float, optional): Initial guess for spreading pressure. Default is
             1.0. This is used in the root finding for the RAST equations and can be
             adjusted if the default guess does not lead to convergence.
+
     Returns:
         np.ndarray: Loadings of each component in the adsorbed phase.
+
     Raises:
         ValueError: If number of isotherms does not match length of partial_pressures,
             if more or less than 2 isotherms are provided, if solved adsorbed mole
@@ -215,8 +217,10 @@ def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
         phi_guess (float, optional): Initial guess for spreading pressure. Default is
             1.0. This is used in the root finding for the RAST equations and can be
             adjusted if the default guess does not lead to convergence.
+
     Returns:
         tuple: (np.ndarray of gas phase mole fractions, np.ndarray of loadings)
+
     Raises:
         ValueError: If more or less than 2 isotherms are provided, if length of adsorbed
             molefractions does not match number of isotherms, if adsorbed mole fractions

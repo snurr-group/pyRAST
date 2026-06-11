@@ -41,6 +41,7 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
         Args:
             x (array-like): Mole fractions of the components in the mixture.
             phi (float): Spreading pressure for the mixture.
+
         Returns:
             np.ndarray: Natural log of the activity coefficients for each component.
         """
@@ -63,6 +64,7 @@ class VanLaar(ActivityCoefficient, model_name='VanLaar'):
         Args:
             x (array-like): Mole fractions of the components in the mixture.
             phi (float): Spreading pressure for the mixture.
+
         Returns:
             float: Inverse of the excess loading for the mixture.
         """

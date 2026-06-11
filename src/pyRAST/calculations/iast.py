@@ -29,8 +29,10 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
             adsorbed phase mole fractions. Length must match number of components. If
             not provided, defaults to pure-component loadings at the given partial
             pressures.
+
     Returns:
         np.ndarray: Loadings of each component in the adsorbed phase.
+
     Raises:
         ValueError: If number of isotherms does not match length of partial_pressures,
             if less than 2 isotherms are provided, if solved adsorbed mole
@@ -180,8 +182,10 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
         gas_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
             gas phase mole fractions. Length must match number of components. If
             not provided, defaults to the adsorbed mole fractions.
+
     Returns:
         tuple: (np.ndarray of gas phase mole fractions, np.ndarray of loadings)
+
     Raises:
         ValueError: If less than 2 isotherms are provided, if length of adsorbed mole
             fractions does not match number of isotherms, if adsorbed mole fractions do

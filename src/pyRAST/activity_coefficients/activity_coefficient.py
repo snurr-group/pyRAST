@@ -24,10 +24,6 @@ class ActivityCoefficient:
     isotherms: list
     model_parameters: dict
     model: str
-    c: float
-    gamma_tol: float
-    param_tol: float
-    max_iter: int
 
     def __new__(cls, *args, **kwargs):
         """Creates an instance of the user-specified model.
@@ -62,18 +58,19 @@ class ActivityCoefficient:
 
     def __init__(self, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
                  isotherms: list, model: str, *, total_loading: bool = False,
-                 c: float = 1, param_tol: float = 1e-6, gamma_tol: float = 1e-4,
-                 max_iter: int = 100, param_mixing: float = 0.2, verbose: bool = False,
-                 assume_ideal_gamma: bool = False, param_guess: dict | None = None,
-                 param_bounds: dict | None = None,
+                 verbose: bool = False, model_parameters: dict | None = None,
+                 c: float = 1, assume_ideal_gamma: bool = False,
+                 param_guess: dict | None = None, param_bounds: dict | None = None,
                  optimization_options: dict | None = None,
-                 model_parameters: dict | None = None):
+                 param_tol: float = 1e-6, gamma_tol: float = 1e-4,
+                 max_iter: int = 100, param_mixing: float = 0.2):
         """Initializes an activity coefficient model.
 
         Activity coefficient models are used in real adsorbed solution theory (RAST) to
         account for non-ideal interactions between adsorbed species. This base class
         provides the framework for fitting activity coefficient models from binary
         mixture data. There are two ways to fit the model parameters:
+
         1) Component loadings: If the user provides component loadings for each
         adsorbed species at different partial fugacities, the model parameters will
         be fit using an iterative approach. In the default mode, the model
@@ -84,6 +81,7 @@ class ActivityCoefficient:
         data point and assuming a C value, or using 2+ data points to fit C as well.
         If the user sets assume_ideal_gamma=True, the model parameters will be fit
         assuming zero excess loading.
+
         2) Total loading: If the user provides total loadings for different partial
         fugacities, the model parameters will be fit by minimizing the residual
         between the predicted total loading from a RAST calculation and the provided
@@ -96,9 +94,9 @@ class ActivityCoefficient:
         see the documentation or paper discussion. Fitting activity coefficient
         models can be challenging, and convergence depends on the quality of the data
         and the choice of fitting options. If you have trouble fitting a model, try
-        adjusting the fitting tolerances or iterations.
+        adjusting the initial guess, tolerances, or optimization options.
 
-        Note: The current behavior is to print an error if model parameters do not
+        Note: The current behavior is to print a warning if model parameters do not
         converge within max_iter iterations. Future versions may raise an exception
         instead.
 
@@ -111,35 +109,52 @@ class ActivityCoefficient:
                 component.
             model (str): Name of the activity coefficient model to use. Must be one of
                 the registered models in pyRAST.
-            total_loading (bool): If True, loadings are treated as total loadings for
-                fitting. If False (default), loadings are treated as component loadings.
-            c (float): Sets the value of C when fitting from a single data point with
-                component loadings. Default is 1.
-            param_tol (float): Tolerance for model parameter convergence in iterative
-                calculations and least-squares optimization. Default is 1e-6.
-            gamma_tol (float): Tolerance for activity coefficient convergence in the
-                inner loop of fitting using excess loading correction. Default is 1e-4.
-            max_iter (int): Maximum number of iterations for convergence in fitting
-                procedures. Default is 100.
-            param_mixing (float): Value between 0 and 1 to mix new and old parameters
-                for stability in iterative fitting with excess loading correction.
-                Increasing this value can make convergence faster, but may cause
-                oscillations. Default is 0.2 (i.e. new parameters are weighted 20%).
-            verbose (bool): If True, prints model parameters at each iteration and
-                convergence information during fitting procedures. Default is False.
-            assume_ideal_gamma (bool): If True, fits model parameters assuming zero
-                excess loading. This can be faster but leads to less accurate
+            total_loading (bool, optional): If True, the input loadings are treated as
+                total loadings and RAST calculations are used to fit the model
                 parameters. Default is False.
-            model_parameters (dict): Optional dictionary of model parameters to use
-                instead of fitting. Keys must match the parameter names for the specific
-                model. If provided, all other fitting options are ignored.
+            verbose (bool, optional): If True, prints convergence information during
+                fitting. Default is False.
+            model_parameters (dict, optional): If provided, these parameters will be
+                used instead of fitting from data. Keys must match the parameter names
+                for the specified model.
+            c (float, optional): Sets the C parameter for fitting to single point data,
+                or used as the initial guess for C when fitting to multiple data points.
+                Default is 1.
+            assume_ideal_gamma (bool, optional): If True, fits model parameters assuming
+                zero excess loading. This might be faster, but is less accurate. Default
+                is False.
+            param_guess (dict, optional): Initial guess for model parameters when
+                fitting from data. Keys must match the parameter names for the specified
+                model. If not provided, the guess will be set to the parameter values
+                that produce ideal behavior (gamma=1).
+            param_bounds (dict, optional): Bounds for model parameters when fitting from
+                data. Keys must match the parameter names for the specified model. If
+                not provided, the bounds will be set to the default specified in the
+                model class.
+            optimization_options (dict, optional): Options for the least-squares
+                optimization when fitting to data. This is passed directly to
+                scipy.optimize.least_squares, so you can specify any options available
+                there. Default is None.
+            param_tol (float, optional): Tolerance for convergence of model parameters
+                when fitting to data. This applies to both iterative calculations and
+                least-squares optimization. Default is 1e-6.
+            gamma_tol (float, optional): Tolerance for convergence of activity
+                coefficients in iterative calculation to determine activity coefficients
+                from component loadings. Default is 1e-4.
+            max_iter (int, optional): Maximum number of iterations in iterative loops
+                when fitting to data. Default is 100.
+            param_mixing (float, optional): Mixing parameter for iterative fitting of
+                model parameters from component loadings. A value between 0 and 1 that
+                controls how much of the new parameter values are used in each
+                iteration (i.e. 0.2 means 20% of new values, 80% of old). This helps
+                to stabilize convergence, but will slow things down. Default is 0.2.
+
         Returns:
             None: Model parameters are stored in self.model_parameters.
+
         Raises:
-            ValueError: If input data is invalid (e.g. negative loadings,
-                mismatched lengths of input arrays, etc.) or if model_parameters keys
-                don't match expected parameter names.
-            RuntimeError: If certain fitting procedures fail to converge.
+            ValueError: If input arrays have inconsistent shapes or invalid values
+                or if input dictionary keys do not match model parameter names.
         """
         # Validate inputs
         partial_fug = np.asarray(partial_fug)
@@ -247,6 +262,7 @@ class ActivityCoefficient:
         Args:
             x (array-like): Mole fractions of components in the adsorbed phase.
             phi (float): Spreading pressure.
+
         Returns:
             np.ndarray: Activity coefficients for each component.
         """
@@ -274,12 +290,12 @@ class ActivityCoefficient:
             comp_q (array-like): Component loadings for one data point.
             partial_fug (array-like): Partial fugacities for one data point.
             excess_loading (bool): If True, applies excess loading correction to phi
-                calculation. Default is False.
-            verbose (bool): If True, prints convergence information during iterative
-                fitting with excess loading correction. Default is False.
+                calculation.
+
         Returns:
             gamma (np.ndarray): Activity coefficients for each component.
             phi (float): Spreading pressure for mixture.
+
         Raises:
             ValueError: If a valid bracket cannot be found for root finding phi.
         """
@@ -508,6 +524,11 @@ class ActivityCoefficient:
                 for stability.
             verbose (bool): If True, prints model parameters at each iteration and
                 convergence information.
+            optimization_options (dict): Options for the least-squares optimization when
+                fitting from data. This is passed directly to
+                scipy.optimize.least_squares, so you can specify any options available
+                there.
+
         Returns:
             None: Model parameters are stored in self.model_parameters.
         """
@@ -562,8 +583,14 @@ class ActivityCoefficient:
         Args:
             verbose (bool): If True, prints model parameters at each iteration and
                             convergence information.
+            optimization_options (dict): Options for the least-squares optimization when
+                fitting from data. This is passed directly to
+                scipy.optimize.least_squares, so you can specify any options available
+                there.
+
         Returns:
             None: Model parameters are stored in self.model_parameters.
+
         Raises:
             RuntimeError: If the fit to total loading fails to converge.
         """

@@ -23,6 +23,7 @@ class Henry(ModelIsotherm, model_name='Henry'):
 
         Args:
             pressure(float or np.ndarray): pressure(s) at which to calculate loading
+
         Returns:
             float or np.ndarray: loading as same variable type as input
         """
@@ -40,6 +41,7 @@ class Henry(ModelIsotherm, model_name='Henry'):
         Args:
             pressure(float or np.ndarray): pressure(s) at which to calculate spreading
                 pressure
+
         Returns:
             float or np.ndarray: spreading pressure as same variable type as input
         """
@@ -58,6 +60,7 @@ class Henry(ModelIsotherm, model_name='Henry'):
 
         Args:
             target_phi (float or np.ndarray): Spreading pressure to calculate P0
+
         Returns:
             float or np.ndarray: P0 as same variable type as input
         """

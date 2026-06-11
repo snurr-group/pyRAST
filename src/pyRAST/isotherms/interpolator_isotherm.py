@@ -24,7 +24,8 @@ class InterpolatorIsotherm:
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
                  fill_value: float | None = None, extrap_method: str | None = None,
-                 extrap_p: float = 1e30, extrap_points: int = 100, **fit_options):
+                 extrap_p: float = 1e30, extrap_points: int = 100,
+                 optimization_options: dict | None = None):
         """Initializes InterpolatorIsotherm utilizing linear interpolator.
 
         This class uses the scipy.interpolate.interp1d, which is a linear interpolation
@@ -88,7 +89,7 @@ class InterpolatorIsotherm:
             if extrap_method == 'linear' or extrap_method in ModelIsotherm._MODELS:
                 df = _build_extrapolated_df(df, loading_key, pressure_key,
                                             extrap_method, extrap_p, extrap_points,
-                                            **fit_options)
+                                            optimization_options)
                 self.interp1d = interp1d(self.df[pressure_key], self.df[loading_key])
                 self.extrap_p = extrap_p
             else:
@@ -124,8 +125,10 @@ class InterpolatorIsotherm:
 
         Args:
             pressure(float): Pressure at which to calculate spreading pressure.
+
         Returns:
             float: Spreading pressure at given pressure.
+
         Raises:
             RuntimeError: if extrapolation is required.
         """
@@ -210,6 +213,7 @@ class InterpolatorIsotherm:
 
         Returns:
             float: p0 at given spreading pressure
+
         Raises:
             RuntimeError: if extrapolation is required.
         """
@@ -292,7 +296,7 @@ class CubicIsotherm:
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
                  grid_points: int = 200, force_monotonic: bool = True,
                  extrap_method: str | None = None, extrap_p: float = 1e20,
-                 extrap_points: int = 100, **fit_options):
+                 extrap_points: int = 100, optimization_options: dict | None = None):
         """Initializes CubicIsotherm utilizing PCHIP interpolators.
 
         This class uses the scipy.interpolate.PchipInterpolator, which is a monotonic
@@ -329,9 +333,10 @@ class CubicIsotherm:
             extrap_points(int, optional): Number of points to use in extrapolation if
                 extrap_method is not None. Default is 100, which provides a smooth
                 extrapolation in most cases.
-            fit_options(optional): Additional keyword arguments to pass to the fit of
-                the analytical extrapolation model if desired. Follows syntax of
-                optimization_options in ModelIsotherm.
+            optimization_options(dict, optional): Options for the least-squares
+                optimization when fitting an analytical isotherm as the extrapolation
+                method. This is passed directly to scipy.optimize.least_squares, so you
+                can specify any options available there. Default is None.
 
         Raises:
             ValueError: If loading_key or pressure_key are not in df or if extrap_method
@@ -365,7 +370,7 @@ class CubicIsotherm:
                 self.extrap_p = extrap_p
                 df = _build_extrapolated_df(df, loading_key, pressure_key,
                                             extrap_method, extrap_p, extrap_points,
-                                            **fit_options)
+                                            optimization_options)
             else:
                 raise ValueError(f'Extrapolation method {extrap_method} not recognized.'
                                  f' Choose from "linear" or '
@@ -450,6 +455,7 @@ class CubicIsotherm:
 
         Returns:
             float: Spreading pressure at given pressure
+
         Raises:
             RuntimeError: if extrapolation is required.
         """
@@ -501,6 +507,7 @@ class CubicIsotherm:
 
         Returns:
             float: p0 at given spreading pressure
+
         Raises:
             RuntimeError: if extrapolation is required.
         """
@@ -547,7 +554,7 @@ class CubicIsotherm:
 
 def _build_extrapolated_df(df: pd.DataFrame, loading_key: str, pressure_key: str,
                           extrap_method: str, extrap_p: float, extrap_points: int,
-                          **fit_options):
+                          optimization_options: dict | None):
     """Extrapolates isotherm data in df according to extrap_method."""
     if extrap_method == 'linear':
         # Use last two points to extrapolate linearly
@@ -566,7 +573,8 @@ def _build_extrapolated_df(df: pd.DataFrame, loading_key: str, pressure_key: str
         # Fits model isotherm to data and uses it to extrapolate up to extrap_p
         extrap_isotherm = ModelIsotherm(df=df, loading_key=loading_key,
                                         pressure_key=pressure_key,
-                                        model=extrap_method, **fit_options)
+                                        model=extrap_method,
+                                        optimization_options=optimization_options)
         iso_load = extrap_isotherm.loading(df[pressure_key].max())
         final_load = df[loading_key].values[-1]
         extrap_iso_shift = final_load - iso_load

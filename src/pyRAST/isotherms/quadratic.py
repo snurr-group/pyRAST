@@ -23,6 +23,7 @@ class Quadratic(ModelIsotherm, model_name='Quadratic'):
 
         Args:
             pressure(float or np.ndarray): pressure(s) at which to calculate loading
+
         Returns:
             float or np.ndarray: loading as same variable type as input
         """
@@ -43,6 +44,7 @@ class Quadratic(ModelIsotherm, model_name='Quadratic'):
         Args:
             pressure(float or np.ndarray): pressure(s) at which to calculate spreading
                 pressure
+
         Returns:
             float or np.ndarray: spreading pressure as same variable type as input
         """

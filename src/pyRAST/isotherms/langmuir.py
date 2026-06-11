@@ -23,6 +23,7 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
 
         Args:
             pressure(float or np.ndarray): pressure(s) at which to calculate loading
+
         Returns:
             float or np.ndarray: loading as same variable type as input
         """
@@ -41,6 +42,7 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
         Args:
             pressure(float or np.ndarray): pressure(s) at which to calculate spreading
                 pressure
+
         Returns:
             float or np.ndarray: spreading pressure as same variable type as input
         """
@@ -61,6 +63,7 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
 
         Args:
             target_phi (float): Spreading pressure to calculate P0
+
         Returns:
             float: P0 value
         """

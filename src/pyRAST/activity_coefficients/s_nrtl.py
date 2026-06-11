@@ -47,6 +47,7 @@ class SNRTL(ActivityCoefficient, model_name='sNRTL'):
         Args:
             x (array-like): Mole fractions of the components in the mixture.
             phi (float): Spreading pressure for the mixture.
+
         Returns:
             np.ndarray: Natural log of the activity coefficients for each component.
         """
@@ -73,6 +74,7 @@ class SNRTL(ActivityCoefficient, model_name='sNRTL'):
         Args:
             x (array-like): Mole fractions of the components in the mixture.
             phi (float): Spreading pressure for the mixture.
+
         Returns:
             float: Inverse of the excess loading for the mixture.
         """
