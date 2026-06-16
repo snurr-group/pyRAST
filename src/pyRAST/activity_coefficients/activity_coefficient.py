@@ -221,8 +221,9 @@ class ActivityCoefficient:
                 self._fit_component_loadings(excess_loading, verbose,
                                              optimization_options)
             else:
-                self._fit_real_component_loadings(param_mixing, verbose,
-                                                  optimization_options)
+                # self._fit_real_component_loadings(param_mixing, verbose,
+                #                                   optimization_options)
+                self._lsq_fit_component_loadings()
         else:
             self.model_parameters = dict.fromkeys(self.param_names, np.nan)
             self._fit_total_loading(verbose, optimization_options)
@@ -408,7 +409,34 @@ class ActivityCoefficient:
         return gamma, phi_sol
 
     def _fit_component_loadings(self, excess_loading, verbose, optimization_options):
-        """docstring"""
+        """Performs fitting for model parameters when component loadings are provided.
+
+        This method is the core of the fitting procedure when component loadings are
+        provided. It can handle two cases: 1) when only a single data point is provided,
+        and 2) when multiple data points are provided. In the single data point case,
+        the method assumes, or is provided by the user, a value for C and then performs
+        least squares fitting for the other model parameters. In the multiple data point
+        case, the method fits C as well by performing least squares fitting for all
+        parameters simultaneously. In both cases, the method relies on
+        _gamma_from_loadings to calculate the activity coefficients and spreading
+        pressure from the component loadings and partial fugacities.
+
+        Args:
+            excess_loading (bool): If True, applies excess loading correction to gamma
+                calculation from component loadings.
+            verbose (bool): If True, prints model parameters at each iteration and
+                residual information.
+            optimization_options (dict): Options for the least-squares optimization when
+                fitting from data. This is passed directly to
+                scipy.optimize.least_squares, so you can specify any options available
+                there.
+
+        Returns:
+            None: Model parameters are stored in self.model_parameters.
+
+        Raises:
+            RuntimeError: If the least-squares optimization fails to converge.
+        """
 
         if self.loadings.ndim == 1:
             # Handle the case where a single data point is provided, thus c is assumed
@@ -441,16 +469,21 @@ class ActivityCoefficient:
             }
             if optimization_options is not None:
                 fitting_inputs.update(optimization_options)
-            sol = least_squares(**fitting_inputs)
+            res = least_squares(**fitting_inputs)
 
-            if not sol.success:
+            if not res.success:
                 raise RuntimeError(f'{self.name} model parameter fit failed with '
-                                   f'message: {sol.message} Try a different initial '
+                                   f'message: {res.message} Try a different initial '
                                    'guess or check data quality.')
+
+            # Print residuals if verbose
+            if verbose:
+                print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')
+                print(f'Residual norm: {res.cost}')
 
             # Save parameters
             for i in range(len(self.param_names)-1):
-                self.model_parameters[self.param_names[i]] = sol.x[i]
+                self.model_parameters[self.param_names[i]] = res.x[i]
         else:
             # Handle the case where multiple data points are provided
             # In this case, we fit all parameters simultaneously using least squares
@@ -635,6 +668,124 @@ class ActivityCoefficient:
             raise RuntimeError(f'Total loading fit failed: {res.message}. Try a '
                                'different initial guess or check data quality.')
 
+        # Assign final parameters to model
+        num_params = len(self.param_names)
+        self.model_parameters = {self.param_names[i]: res.x[i]
+                                 for i in range(num_params)}
+
+    def _lsq_fit_component_loadings(self):
+
+        points = len(self.partial_fug)
+        q_total = np.sum(self.loadings, axis=1)
+        xs = self.loadings / q_total[:, None]
+
+        def solve_phi(x, q_total):
+            p0 = np.zeros(len(self.isotherms))
+            def residuals(phi, x):
+                for i in range(len(self.isotherms)):
+                    p0[i] = self.isotherms[i].p0(phi)
+                q0 = np.array([self.isotherms[i].loading(p0[i])
+                                for i in range(len(self.isotherms))])
+                q_excess = self.inverse_excess_loading(x, phi)
+                q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
+                return q_total_pred - q_total
+
+            # Use a bracketing strategy to ensure brentq can find a root.
+            def _bracket_phi(x, residuals, phi_low = 1e-12, phi_high = 1.0,
+                             max_expand = 60, phi_cap = np.inf):
+                # Determine the maximum phi based on isotherm extrapolation limits
+                def _phi_cap_for_isotherm(iso):
+                    if isinstance(iso, InterpolatorIsotherm):
+                        if iso.extrap_method is not None or iso.fill_value is not None:
+                            return iso.extrap_p
+                        p_max = iso.df[iso.pressure_key].max()
+                        return iso.spreading_pressure(p_max)
+                    if isinstance(iso, CubicIsotherm):
+                        if iso.extrap_method is not None:
+                            return iso.extrap_p
+                        p_max = iso.df[iso.pressure_key].max()
+                        return iso.spreading_pressure(p_max)
+                    return np.inf
+
+                # Compute the cap if there is one
+                caps = [_phi_cap_for_isotherm(iso) for iso in self.isotherms]
+                phi_cap = min(caps) if any(np.isfinite(caps)) else np.inf
+
+                # Check lower limit to ensure we don't start with an invalid point
+                f_low = residuals(phi_low, x)
+                if not np.isfinite(f_low):
+                    raise ValueError('Residual is not finite at initial phi_low.')
+
+                # Lower upper limit if necessary to find a finite residual
+                f_high = residuals(phi_high, x)
+                while not np.isfinite(f_high) and phi_high > phi_low:
+                    phi_high *= 0.9
+                    f_high = residuals(phi_high, x)
+
+                # Throw error if we can't find a finite residual at the upper limit
+                if not np.isfinite(f_high):
+                    raise ValueError('Could not find finite residual at initial phi_high.')
+
+                # Expand upper limit until we bracket a root or hit the cap
+                for _ in range(max_expand):
+                    if np.isfinite(f_high) and np.sign(f_low) != np.sign(f_high):
+                        return phi_low, phi_high
+
+                    if np.isfinite(phi_cap) and phi_high >= phi_cap:
+                        break
+
+                    phi_high = min(phi_high * 2.0,
+                                phi_cap) if np.isfinite(phi_cap) else phi_high * 2.0
+                    f_high = residuals(phi_high, x)
+
+                    # if we just hit a NaN/inf, back off once
+                    if not np.isfinite(f_high):
+                        phi_high *= 0.5
+                        f_high = residuals(phi_high, x)
+                        if not np.isfinite(f_high):
+                            break
+
+                # If we exit the loop without finding a valid bracket, raise an error
+                raise ValueError("Could not find valid bracketing for root finding")
+
+            # Solve for phi with bracketed root finding
+            phi_low, phi_high = _bracket_phi(x, residuals)
+            return cast('float', brentq(residuals, phi_low, phi_high, args=(x,)))
+
+        def residuals(params):
+            num_params = len(self.param_names)
+            self.model_parameters = {self.param_names[i]: params[i]
+                                     for i in range(num_params)}
+
+            res = np.zeros(points * 2)
+
+            for i in range(points):
+                phi = solve_phi(xs[i], q_total[i])
+                p0 = np.asarray([iso.p0(phi) for iso in self.isotherms])
+
+                ln_gamma_exp = np.log(self.partial_fug[i] / (p0 * xs[i]))
+                ln_gamma_pred = self.ln_gamma(xs[i], phi)
+
+                res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
+            return res
+
+        # Assign initial guess for parameters
+        initial_guess = list(self.param_guess.values())
+
+        # Enforce parameter bounds
+        bounds = [[self.param_bounds[param][0] for param in self.param_names],
+                  [self.param_bounds[param][1] for param in self.param_names]]
+
+        fitting_inputs = {
+            'fun': residuals,
+            'x0': initial_guess,
+            'bounds': bounds,
+            'xtol': self.param_tol,
+        }
+        res = least_squares(**fitting_inputs)
+        if not res.success:
+            raise RuntimeError(f'Component loading fit failed: {res.message}. Try a '
+                               'different initial guess or check data quality.')
         # Assign final parameters to model
         num_params = len(self.param_names)
         self.model_parameters = {self.param_names[i]: res.x[i]

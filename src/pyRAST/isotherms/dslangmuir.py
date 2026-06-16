@@ -61,8 +61,8 @@ class DSLangmuir(ModelIsotherm, model_name='DSLangmuir'):
         """
         langmuir_guess = super().initial_guess()
         return {
-            "M1": 0.5 * langmuir_guess['M'],
-            "K1": 0.4 * langmuir_guess['K'],
-            "M2": 0.5 * langmuir_guess['M'],
-            "K2": 0.6 * langmuir_guess['K'],
+            'M1': 0.5 * langmuir_guess['M'],
+            'K1': 0.4 * langmuir_guess['K'],
+            'M2': 0.5 * langmuir_guess['M'],
+            'K2': 0.6 * langmuir_guess['K'],
         }

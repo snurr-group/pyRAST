@@ -98,6 +98,8 @@ class ModelIsotherm:
             if set(model_parameters.keys()) != set(self.param_names):
                 raise ValueError(f'model_parameters keys must be {self.param_names}.')
             self.model_parameters = model_parameters
+            self.param_guess = {}
+            self.rmse = None
             return
 
         # Check for valid inputs
@@ -127,8 +129,8 @@ class ModelIsotherm:
             self.param_bounds = param_bounds
 
         self.param_guess = self.enforce_parameter_bounds(self.param_guess)
-        # Fit model to data
 
+        # Fit model to data
         self.model_parameters = dict.fromkeys(self.param_names, np.nan)
         self._fit(optimization_options)
 
@@ -156,6 +158,10 @@ class ModelIsotherm:
         while self.spreading_pressure(p_hi) < target_phi:
             p_hi *= 10
         return brentq(lambda p: self.spreading_pressure(p) - target_phi, p_lo, p_hi)
+
+    def pressure(self, loading):
+        """For VST models"""
+        return NotImplementedError('pressure method not implemented for this model.')
 
     def initial_guess(self):
         """Returns initial guess for model parameters.
@@ -215,7 +221,7 @@ class ModelIsotherm:
         guess = np.array(list(self.param_guess.values()))
         bounds = [[self.param_bounds[param][0] for param in self.param_names],
                   [self.param_bounds[param][1] for param in self.param_names]]
-        def residuals(x):
+        def residuals_loading(x):
             for i in range(len(self.param_names)):
                 self.model_parameters[self.param_names[i]] = x[i]
 
@@ -223,7 +229,7 @@ class ModelIsotherm:
 
         # Build dictionary of inputs to curve fitting
         fitting_inputs = {
-            'fun': residuals,
+            'fun': residuals_loading,
             'x0': guess,
             'bounds': bounds,
         }
