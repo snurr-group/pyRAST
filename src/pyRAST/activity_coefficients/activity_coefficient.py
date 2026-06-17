@@ -59,10 +59,10 @@ class ActivityCoefficient:
     def __init__(self, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
                  isotherms: list, model: str, *, total_loading: bool = False,
                  verbose: bool = False, model_parameters: dict | None = None,
-                 c: float = 1, param_guess: dict | None = None,
+                 c: float = 1, param_guess: dict | None = None, param_tol: float = 1e-6,
                  param_bounds: dict | None = None,
                  optimization_options: dict | None = None,
-                 param_tol: float = 1e-6):
+                 root_bracketing_options: dict | None = None):
         """Initializes an activity coefficient model.
 
         Activity coefficient models are used in real adsorbed solution theory (RAST) to
@@ -70,12 +70,21 @@ class ActivityCoefficient:
         provides the framework for fitting activity coefficient models from binary
         mixture data. There are two ways to fit the model parameters:
 
-        1) Component loadings: 
+        1) Component loadings: If the user provides component loadings for different
+        partial fugacities, the model parameters will be fit by minimizing the residual
+        between the predicted and observed activity coefficients for each component.
+        At each iteration, a 1D solver is used to find the spreading pressure that gives
+        the observed loading for each component. This approach is more reliable for
+        fitting activity coefficient models. If only one data point is provided, the
+        models can still be fit assuming a default value for the C parameter, which
+        can be adjusted by passing the 'c' argument. With multiple data points, the C
+        parameter will be used as an initial guess and fit along with the other model
+        parameters.
 
         2) Total loading: If the user provides total loadings for different partial
         fugacities, the model parameters will be fit by minimizing the residual
         between the predicted total loading from a RAST calculation and the provided
-        total loading. This approach is more computationally intensive, but is
+        total loading. This approach is more computationally expensive, but is
         useful for experimental data where component loadings are difficult to
         measure. The user must provide at least as many total loading data points as
         model parameters.
@@ -110,6 +119,11 @@ class ActivityCoefficient:
                 fitting from data. Keys must match the parameter names for the specified
                 model. If not provided, the guess will be set to the parameter values
                 that produce ideal behavior (gamma=1).
+            param_tol (float, optional): Tolerance in parameter values for convergence
+                when fitting to data. This can often be adjusted lower without
+                significantly affecting the fit quality. This is passed as the 'xtol'
+                parameter to scipy.optimize.least_squares. If specified again in
+                optimization_options, it will override this value. Default is 1e-6.
             param_bounds (dict, optional): Bounds for model parameters when fitting from
                 data. Keys must match the parameter names for the specified model. If
                 not provided, the bounds will be set to the default specified in the
@@ -118,7 +132,14 @@ class ActivityCoefficient:
                 optimization when fitting to data. This is passed directly to
                 scipy.optimize.least_squares, so you can specify any options available
                 there. Default is None.
-            param_tol (float, optional):
+            root_bracketing_options (dict, optional): Options for the root bracketing
+                when fitting from component loading data. This is passed as keyword
+                arguments to the _bracket_phi function that is used to find the
+                spreading pressure at each iteration. The default values for these
+                parameters are: phi_low=1e-12, phi_high=1.0, max_expand=60,
+                phi_cap=np.inf. Adjusting these parameters can help with finding a root
+                for phi, although if root finding continuously fails it is likely that
+                the model is not suitable for the system you are trying to fit.
 
         Returns:
             None: Model parameters are stored in self.model_parameters.
@@ -175,7 +196,7 @@ class ActivityCoefficient:
             if set(param_guess.keys()) != set(self.param_names):
                 raise ValueError(f'param_guess keys must be {self.param_names}.')
             self.param_guess = param_guess
-        self.param_guess = self.enforce_parameter_bounds(self.param_guess)
+        self.param_guess = self._enforce_parameter_bounds(self.param_guess)
 
         # Fit model to data
         # If user provided parameters, check that keys are correct
@@ -185,7 +206,8 @@ class ActivityCoefficient:
                 raise ValueError(f'model_parameters keys must be {self.param_names}.')
             self.model_parameters = model_parameters
         elif not total_loading:
-            self._fit_component_loadings(verbose, optimization_options)
+            self._fit_component_loadings(verbose, optimization_options,
+                                         root_bracketing_options)
         else:
             self._fit_total_loading(verbose, optimization_options)
 
@@ -194,7 +216,7 @@ class ActivityCoefficient:
         return (f'{self.name} activity coefficient model with parameters: '
                 f'{self.model_parameters}')
 
-    def enforce_parameter_bounds(self, guess):
+    def _enforce_parameter_bounds(self, guess):
         """Enforces parameter bounds on the initial guess.
 
         Args:
@@ -315,7 +337,40 @@ class ActivityCoefficient:
         self.model_parameters = {self.param_names[i]: res.x[i]
                                  for i in range(num_params)}
 
-    def _fit_component_loadings(self, verbose, optimization_options):
+    def _fit_component_loadings(self, verbose, optimization_options,
+                                root_bracketing_options):
+        """Fits model parameters to component loading data.
+
+        This method fits the model parameters to component loading data by minimizing
+        the difference between the predicted and observed ln(activity coefficients).
+        It uses a least-squares approach to find the optimal parameters. At each step,
+        the model parameters are updated and used in a 1D root-finding calculation to
+        find the spreading pressure that gives the observed total loading for each data
+        point. All model parameters can be fit simultaneously using 2+ data points, or
+        the C parameter can be fixed and the other parameters fit using a single data
+        point.
+
+        Args:
+            verbose (bool): If True, prints model parameters and residual information
+                after fitting.
+            optimization_options (dict): Options for the least-squares optimization when
+                fitting model parameters. This is passed directly to
+                scipy.optimize.least_squares, so you can specify any options available
+                there.
+            root_bracketing_options (dict): Options for the root bracketing when fitting
+                from component loading data. This is passed as keyword arguments to the
+                _bracket_phi function that is used to find the spreading pressure at
+                each iteration.
+
+        Returns:
+            None: Model parameters are stored in self.model_parameters.
+
+        Raises:
+            RuntimeError: If the fit to component loadings fails to converge or if a
+                root cannot be found for the spreading pressure at any iteration.
+            ValueError: If residuals are not finite at the bracketing limits for root
+                finding.
+        """
         # Reshape data if single point is provided
         single_point = False
         if self.loadings.ndim == 1:
@@ -330,19 +385,19 @@ class ActivityCoefficient:
 
         def solve_phi(x, q_total):
             p0 = np.zeros(len(self.isotherms))
+            # Calculate residual for determining phi by total loading at given phi
             def residuals(phi, x):
                 for i in range(len(self.isotherms)):
                     p0[i] = self.isotherms[i].p0(phi)
-
                 q0 = np.array([self.isotherms[i].loading(p0[i])
                                 for i in range(len(self.isotherms))])
                 q_excess = self.inverse_excess_loading(x, phi)
                 q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
                 return q_total_pred - q_total
 
-            # Use a bracketing strategy to ensure brentq can find a root.
-            def _bracket_phi(x, residuals, phi_low = 1e-12, phi_high = 1.0,
-                             max_expand = 60, phi_cap = np.inf):
+            # Use a bracketing strategy to ensure brentq can find a root. If a root is
+            # bracketed, then brentq is guaranteed to find it.
+            def _bracket_phi(x, residuals, *, phi_low, phi_high, max_expand, phi_cap):
                 # Determine the maximum phi based on isotherm extrapolation limits
                 def _phi_cap_for_isotherm(iso):
                     if isinstance(iso, InterpolatorIsotherm):
@@ -364,7 +419,10 @@ class ActivityCoefficient:
                 # Check lower limit to ensure we don't start with an invalid point
                 f_low = residuals(phi_low, x)
                 if not np.isfinite(f_low):
-                    raise ValueError('Residual is not finite at initial phi_low.')
+                    raise ValueError('Could not find finite residual at initial '
+                                     'phi_low. Try adjusting the bracketing '
+                                     'parameters, though this may indicate the model '
+                                     'is not suitable for this system.')
 
                 # Lower upper limit if necessary to find a finite residual
                 f_high = residuals(phi_high, x)
@@ -374,7 +432,10 @@ class ActivityCoefficient:
 
                 # Throw error if we can't find a finite residual at the upper limit
                 if not np.isfinite(f_high):
-                    raise ValueError('Could not find finite residual at initial phi_high.')
+                    raise ValueError('Could not find finite residual at initial '
+                                     'phi_high. Try adjusting the bracketing '
+                                     'parameters, though this may indicate the model'
+                                     'is not suitable for this system.')
 
                 # Expand upper limit until we bracket a root or hit the cap
                 for _ in range(max_expand):
@@ -396,27 +457,33 @@ class ActivityCoefficient:
                             break
 
                 # If we exit the loop without finding a valid bracket, raise an error
-                raise ValueError("Could not find valid bracketing for root finding")
+                raise RuntimeError('Could not bracket a root for phi. Try adjusting the'
+                                 ' bracketing parameters, though this may indicate the '
+                                 'model is not suitable for this system.')
+            # Prepare inputs for bracketing
+            bracketing_inputs = {'phi_low': 1e-12, 'phi_high': 1.0, 'max_expand': 60,
+                                 'phi_cap': np.inf}
+            if root_bracketing_options is not None:
+                bracketing_inputs.update(root_bracketing_options)
 
             # Solve for phi with bracketed root finding
-            phi_low, phi_high = _bracket_phi(x, residuals)
+            phi_low, phi_high = _bracket_phi(x, residuals, **bracketing_inputs)
             return cast('float', brentq(residuals, phi_low, phi_high, args=(x,)))
 
         def residuals(params):
+            # Update model parameters that we are fitting
             num_params = len(params)
-
             self.model_parameters.update({self.param_names[i]: params[i]
                                      for i in range(num_params)})
 
+            # Calculate residual of predicted vs observed ln(gamma)
             res = np.zeros(points * 2)
-
             for i in range(points):
                 phi = solve_phi(xs[i], q_total[i])
                 p0 = np.asarray([iso.p0(phi) for iso in self.isotherms])
 
                 ln_gamma_exp = np.log(self.partial_fug[i] / (p0 * xs[i]))
                 ln_gamma_pred = self.ln_gamma(xs[i], phi)
-
                 res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
             return res
 
