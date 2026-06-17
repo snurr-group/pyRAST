@@ -59,11 +59,10 @@ class ActivityCoefficient:
     def __init__(self, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
                  isotherms: list, model: str, *, total_loading: bool = False,
                  verbose: bool = False, model_parameters: dict | None = None,
-                 c: float = 1, assume_ideal_gamma: bool = False,
-                 param_guess: dict | None = None, param_bounds: dict | None = None,
+                 c: float = 1, param_guess: dict | None = None,
+                 param_bounds: dict | None = None,
                  optimization_options: dict | None = None,
-                 param_tol: float = 1e-6, gamma_tol: float = 1e-4,
-                 max_iter: int = 100, param_mixing: float = 0.2):
+                 param_tol: float = 1e-6):
         """Initializes an activity coefficient model.
 
         Activity coefficient models are used in real adsorbed solution theory (RAST) to
@@ -71,16 +70,7 @@ class ActivityCoefficient:
         provides the framework for fitting activity coefficient models from binary
         mixture data. There are two ways to fit the model parameters:
 
-        1) Component loadings: If the user provides component loadings for each
-        adsorbed species at different partial fugacities, the model parameters will
-        be fit using an iterative approach. In the default mode, the model
-        parameters are first fit assuming zero excess loading, and then iteratively
-        refit with excess loading correction until convergence. Where possible, each
-        model fits C and analytically solves for the other parameters to reduce
-        computation time. Activity coefficient models can be fit using only a single
-        data point and assuming a C value, or using 2+ data points to fit C as well.
-        If the user sets assume_ideal_gamma=True, the model parameters will be fit
-        assuming zero excess loading.
+        1) Component loadings: 
 
         2) Total loading: If the user provides total loadings for different partial
         fugacities, the model parameters will be fit by minimizing the residual
@@ -95,10 +85,6 @@ class ActivityCoefficient:
         models can be challenging, and convergence depends on the quality of the data
         and the choice of fitting options. If you have trouble fitting a model, try
         adjusting the initial guess, tolerances, or optimization options.
-
-        Note: The current behavior is to print a warning if model parameters do not
-        converge within max_iter iterations. Future versions may raise an exception
-        instead.
 
         Args:
             partial_fug (array-like): Partial fugacities of each component in
@@ -120,9 +106,6 @@ class ActivityCoefficient:
             c (float, optional): Sets the C parameter for fitting to single point data,
                 or used as the initial guess for C when fitting to multiple data points.
                 Default is 1.
-            assume_ideal_gamma (bool, optional): If True, fits model parameters assuming
-                zero excess loading. This might be faster, but is less accurate. Default
-                is False.
             param_guess (dict, optional): Initial guess for model parameters when
                 fitting from data. Keys must match the parameter names for the specified
                 model. If not provided, the guess will be set to the parameter values
@@ -135,19 +118,7 @@ class ActivityCoefficient:
                 optimization when fitting to data. This is passed directly to
                 scipy.optimize.least_squares, so you can specify any options available
                 there. Default is None.
-            param_tol (float, optional): Tolerance for convergence of model parameters
-                when fitting to data. This applies to both iterative calculations and
-                least-squares optimization. Default is 1e-6.
-            gamma_tol (float, optional): Tolerance for convergence of activity
-                coefficients in iterative calculation to determine activity coefficients
-                from component loadings. Default is 1e-4.
-            max_iter (int, optional): Maximum number of iterations in iterative loops
-                when fitting to data. Default is 100.
-            param_mixing (float, optional): Mixing parameter for iterative fitting of
-                model parameters from component loadings. A value between 0 and 1 that
-                controls how much of the new parameter values are used in each
-                iteration (i.e. 0.2 means 20% of new values, 80% of old). This helps
-                to stabilize convergence, but will slow things down. Default is 0.2.
+            param_tol (float, optional):
 
         Returns:
             None: Model parameters are stored in self.model_parameters.
@@ -190,8 +161,6 @@ class ActivityCoefficient:
 
         # Store calculation info
         self.param_tol = param_tol
-        self.gamma_tol = gamma_tol
-        self.max_iter = max_iter
 
         # Handle parameter guess and bounds
         self.param_bounds = dict(zip(self.param_names, self.param_default_bounds))
@@ -210,22 +179,14 @@ class ActivityCoefficient:
 
         # Fit model to data
         # If user provided parameters, check that keys are correct
+        self.model_parameters = dict.fromkeys(self.param_names, np.nan)
         if model_parameters is not None:
             if set(model_parameters.keys()) != set(self.param_names):
                 raise ValueError(f'model_parameters keys must be {self.param_names}.')
             self.model_parameters = model_parameters
         elif not total_loading:
-            self.model_parameters = dict.fromkeys(self.param_names, np.nan)
-            if assume_ideal_gamma:
-                excess_loading = False
-                self._fit_component_loadings(excess_loading, verbose,
-                                             optimization_options)
-            else:
-                # self._fit_real_component_loadings(param_mixing, verbose,
-                #                                   optimization_options)
-                self._lsq_fit_component_loadings()
+            self._fit_component_loadings(verbose, optimization_options)
         else:
-            self.model_parameters = dict.fromkeys(self.param_names, np.nan)
             self._fit_total_loading(verbose, optimization_options)
 
     def __repr__(self):
@@ -277,328 +238,6 @@ class ActivityCoefficient:
         raise NotImplementedError('inverse_excess_loading method must be implemented '
                                   'in subclass.')
 
-    def _gamma_from_loadings(self, comp_q, partial_fug, excess_loading):
-        """Calculates gamma and phi from component loadings and partial fugacities.
-
-        This method is used in the fitting procedure when component loadings are
-        provided. It solves for the spreading pressure (phi) that corresponds to the
-        provided loadings and partial fugacities, and then calculates the activity
-        coefficients (gamma) from those values. If excess_loading is True, the
-        spreading pressure calculation includes the excess loading correction in an
-        iterative routine. It is designed to handle one point of binary data at a time.
-
-        Args:
-            comp_q (array-like): Component loadings for one data point.
-            partial_fug (array-like): Partial fugacities for one data point.
-            excess_loading (bool): If True, applies excess loading correction to phi
-                calculation.
-
-        Returns:
-            gamma (np.ndarray): Activity coefficients for each component.
-            phi (float): Spreading pressure for mixture.
-
-        Raises:
-            ValueError: If a valid bracket cannot be found for root finding phi.
-        """
-        # Calculate important variables for determining gamma and phi
-        q_total = sum(comp_q)
-        x = comp_q / q_total
-        p0 = np.zeros(len(self.isotherms))
-
-        # Define residual function for root finding to solve for phi
-        def residuals(phi, q_excess = 0.0):
-            for i in range(len(self.isotherms)):
-                p0[i] = self.isotherms[i].p0(phi)
-            q0 = np.array([self.isotherms[i].loading(p0[i])
-                           for i in range(len(self.isotherms))])
-            q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
-            return q_total_pred - q_total
-
-        # Use a bracketing strategy to ensure brentq can find a root.
-        def _bracket_phi(residuals, q_excess = 0.0, phi_low = 1e-12, phi_high = 1.0,
-                         max_expand = 60, phi_cap = np.inf):
-            # Determine the maximum phi based on isotherm extrapolation limits
-            def _phi_cap_for_isotherm(iso):
-                if isinstance(iso, InterpolatorIsotherm):
-                    if iso.extrap_method is not None or iso.fill_value is not None:
-                        return iso.extrap_p
-                    p_max = iso.df[iso.pressure_key].max()
-                    return iso.spreading_pressure(p_max)
-                if isinstance(iso, CubicIsotherm):
-                    if iso.extrap_method is not None:
-                        return iso.extrap_p
-                    p_max = iso.df[iso.pressure_key].max()
-                    return iso.spreading_pressure(p_max)
-                return np.inf
-
-            # Compute the cap if there is one
-            caps = [_phi_cap_for_isotherm(iso) for iso in self.isotherms]
-            phi_cap = min(caps) if any(np.isfinite(caps)) else np.inf
-
-            # Check lower limit to ensure we don't start with an invalid point
-            f_low = residuals(phi_low, q_excess=q_excess)
-            if not np.isfinite(f_low):
-                raise ValueError('Residual is not finite at initial phi_low.')
-
-            # Lower upper limit if necessary to find a finite residual
-            f_high = residuals(phi_high, q_excess=q_excess)
-            while not np.isfinite(f_high) and phi_high > phi_low:
-                phi_high *= 0.9
-                f_high = residuals(phi_high, q_excess=q_excess)
-
-            # Throw error if we can't find a finite residual at the upper limit
-            if not np.isfinite(f_high):
-                raise ValueError('Could not find finite residual at initial phi_high.')
-
-            # Expand upper limit until we bracket a root or hit the cap
-            for _ in range(max_expand):
-                if np.isfinite(f_high) and np.sign(f_low) != np.sign(f_high):
-                    return phi_low, phi_high
-
-                if np.isfinite(phi_cap) and phi_high >= phi_cap:
-                    break
-
-                phi_high = min(phi_high * 2.0,
-                               phi_cap) if np.isfinite(phi_cap) else phi_high * 2.0
-                f_high = residuals(phi_high, q_excess=q_excess)
-
-                # if we just hit a NaN/inf, back off once
-                if not np.isfinite(f_high):
-                    phi_high *= 0.5
-                    f_high = residuals(phi_high, q_excess=q_excess)
-                    if not np.isfinite(f_high):
-                        break
-
-            # If we exit the loop without finding a valid bracket, raise an error
-            raise ValueError("Could not find valid bracketing for root finding")
-
-        # Solve for phi without excess loading correction with bracketed root finding
-        phi_low, phi_high = _bracket_phi(residuals)
-        phi_sol = cast('float', brentq(residuals, phi_low, phi_high))
-
-        # Calculate gamma from loadings and phi without excess loading correction
-        for i in range(len(self.isotherms)):
-            p0[i] = self.isotherms[i].p0(phi_sol)
-        gamma = partial_fug / (p0 * x)
-        if not excess_loading:
-            return gamma, phi_sol
-
-        # Iterative excess loading correction
-        for iteration in range(self.max_iter):
-            # Copy old gamma
-            gamma_old = gamma.copy()
-            q_excess = self.inverse_excess_loading(x, phi_sol)
-
-            # Resolve phi with excess loading correction
-            phi_low, phi_high = _bracket_phi(residuals, q_excess = q_excess)
-            phi_sol = cast('float', brentq(residuals,
-                                           phi_low, phi_high, args=(q_excess,)))
-
-            # Calculate new gamma
-            for i in range(len(self.isotherms)):
-                p0[i] = self.isotherms[i].p0(phi_sol)
-            gamma = partial_fug / (p0 * x)
-
-            # Check convergence
-            if np.all(np.abs(gamma - gamma_old) < self.gamma_tol):
-                break
-        # If we reach max iterations without convergence, print warning
-        else:
-            print('Gamma from loadings did not converge.')
-
-        return gamma, phi_sol
-
-    def _fit_component_loadings(self, excess_loading, verbose, optimization_options):
-        """Performs fitting for model parameters when component loadings are provided.
-
-        This method is the core of the fitting procedure when component loadings are
-        provided. It can handle two cases: 1) when only a single data point is provided,
-        and 2) when multiple data points are provided. In the single data point case,
-        the method assumes, or is provided by the user, a value for C and then performs
-        least squares fitting for the other model parameters. In the multiple data point
-        case, the method fits C as well by performing least squares fitting for all
-        parameters simultaneously. In both cases, the method relies on
-        _gamma_from_loadings to calculate the activity coefficients and spreading
-        pressure from the component loadings and partial fugacities.
-
-        Args:
-            excess_loading (bool): If True, applies excess loading correction to gamma
-                calculation from component loadings.
-            verbose (bool): If True, prints model parameters at each iteration and
-                residual information.
-            optimization_options (dict): Options for the least-squares optimization when
-                fitting from data. This is passed directly to
-                scipy.optimize.least_squares, so you can specify any options available
-                there.
-
-        Returns:
-            None: Model parameters are stored in self.model_parameters.
-
-        Raises:
-            RuntimeError: If the least-squares optimization fails to converge.
-        """
-
-        if self.loadings.ndim == 1:
-            # Handle the case where a single data point is provided, thus c is assumed
-            gamma, phi = self._gamma_from_loadings(self.loadings, self.partial_fug,
-                                                   excess_loading)
-            x = self.loadings / np.sum(self.loadings)
-            c = self.c
-            ln_g = np.log(gamma)
-
-            # Set c and solve for the other model parameters with bounds
-            self.model_parameters['C'] = c
-            def single_residuals(p):
-                for i in range(len(self.param_names)-1):
-                    self.model_parameters[self.param_names[i]] = p[i]
-                ln_gamma = self.ln_gamma(x, phi)
-                return ln_gamma - ln_g
-
-            # Get initial guess
-            guess = list(self.param_guess.values())[:-1]
-
-            # Get parameter bounds
-            bounds = [[self.param_bounds[param][0] for param in self.param_names[:-1]],
-                      [self.param_bounds[param][1] for param in self.param_names[:-1]]]
-
-            fitting_inputs = {
-                'fun': single_residuals,
-                'x0': guess,
-                'bounds': bounds,
-                'xtol': self.param_tol,
-            }
-            if optimization_options is not None:
-                fitting_inputs.update(optimization_options)
-            res = least_squares(**fitting_inputs)
-
-            if not res.success:
-                raise RuntimeError(f'{self.name} model parameter fit failed with '
-                                   f'message: {res.message} Try a different initial '
-                                   'guess or check data quality.')
-
-            # Print residuals if verbose
-            if verbose:
-                print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')
-                print(f'Residual norm: {res.cost}')
-
-            # Save parameters
-            for i in range(len(self.param_names)-1):
-                self.model_parameters[self.param_names[i]] = res.x[i]
-        else:
-            # Handle the case where multiple data points are provided
-            # In this case, we fit all parameters simultaneously using least squares
-            points = len(self.partial_fug)
-            gamma = np.zeros((points, 2))
-            phi = np.zeros(points)
-            xs = np.zeros((points, 2))
-
-            for i in range(points):
-                gamma[i], phi[i] = self._gamma_from_loadings(self.loadings[i],
-                                                             self.partial_fug[i],
-                                                             excess_loading)
-                xs[i] = self.loadings[i] / np.sum(self.loadings[i])
-
-            # Solve for all model parameters simultaneously with least squares
-            def residuals(params):
-                for i in range(len(self.param_names)):
-                    self.model_parameters[self.param_names[i]] = params[i]
-
-                res = np.zeros(points * 2)
-                for i in range(points):
-                    ln_gamma_pred = self.ln_gamma(xs[i], phi[i])
-                    ln_gamma_exp = np.log(gamma[i])
-                    res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
-                return res
-
-            # Build initial guess for least squares based on ideal case
-            guess = list(self.param_guess.values())
-            print(guess)
-
-            # Enforce parameter bounds
-            bounds = [[self.param_bounds[param][0] for param in self.param_names],
-                      [self.param_bounds[param][1] for param in self.param_names]]
-
-            fitting_inputs = {
-                'fun': residuals,
-                'x0': guess,
-                'bounds': bounds,
-                'xtol': self.param_tol,
-            }
-            if optimization_options is not None:
-                fitting_inputs.update(optimization_options)
-            res = least_squares(**fitting_inputs)
-            if not res.success:
-                raise RuntimeError(f'{self.name} model parameter fit failed with '
-                                   f'message: {res.message} Try a different initial '
-                                   'guess for c or check data quality.')
-
-            # Print residuals if verbose
-            if verbose:
-                print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')
-                print(f'Residual norm: {res.cost}')
-
-            # Save parameters
-            for i in range(len(self.param_names)):
-                self.model_parameters[self.param_names[i]] = res.x[i]
-
-    def _fit_real_component_loadings(self, param_mixing: float, verbose,
-                                     optimization_options):
-        """Fits model parameters to component loadings with excess loading correction.
-
-        This method implements the outer loop of the iterative fitting procedure for
-        activity coefficients when component loadings are provided. It first fits the
-        model parameters using the ideal approach, and then iteratively refits the
-        parameters with excess loading correction until convergence. The param_mixing
-        value helps with stability by mixing the old and new parameters at each
-        iteration.
-
-        Args:
-            param_mixing (float): Value between 0 and 1 to mix new and old parameters
-                for stability.
-            verbose (bool): If True, prints model parameters at each iteration and
-                convergence information.
-            optimization_options (dict): Options for the least-squares optimization when
-                fitting from data. This is passed directly to
-                scipy.optimize.least_squares, so you can specify any options available
-                there.
-
-        Returns:
-            None: Model parameters are stored in self.model_parameters.
-        """
-        # First pass for model parameters is use ideal case
-        excess_loading = False
-        self._fit_component_loadings(excess_loading, verbose, optimization_options)
-
-        # Now we want to iteratively get more accurate model parameters
-        for iteration in range(self.max_iter):
-            # Copy old parameters
-            params_old = self.model_parameters.copy()
-            excess_loading = True
-            self._fit_component_loadings(excess_loading, verbose, optimization_options)
-
-            # Mix new and old parameters to improve stability
-            params_new = self.model_parameters.copy()
-            for k in self.param_names:
-                self.model_parameters[k] = param_mixing * params_new[k] + \
-                    (1 - param_mixing) * params_old[k]
-
-            # Print parameters at each iteration if verbose
-            if verbose:
-                print(f'Model parameter convergence loop: iteration {iteration + 1}, '
-                      f'model parameters: {self.model_parameters}')
-
-            # Check convergence
-            if all(abs(self.model_parameters[param] - params_old[param]) <
-                   self.param_tol for param in self.param_names):
-                if verbose:
-                    print(f'Model parameters converged after {iteration + 1} '
-                          'iterations.')
-                break
-
-        # If we reach max iterations without convergence, print warning
-        else:
-            print('Model parameters did not converge.')
-
     def _fit_total_loading(self, verbose, optimization_options):
         """Fits model parameters to total loading data.
 
@@ -638,8 +277,6 @@ class ActivityCoefficient:
             num_params = len(self.param_names)
             self.model_parameters = {self.param_names[i]: params[i]
                                      for i in range(num_params)}
-            if verbose:
-                print(self.model_parameters)
             res = np.zeros(points)
             for i in range(points):
                 q_total_pred = np.sum(rast(partial_fug[i], self.isotherms,
@@ -668,13 +305,25 @@ class ActivityCoefficient:
             raise RuntimeError(f'Total loading fit failed: {res.message}. Try a '
                                'different initial guess or check data quality.')
 
+        # Print residuals if verbose
+        if verbose:
+            print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')
+            print(f'Residual Sum of Squares: {res.cost}')
+
         # Assign final parameters to model
         num_params = len(self.param_names)
         self.model_parameters = {self.param_names[i]: res.x[i]
                                  for i in range(num_params)}
 
-    def _lsq_fit_component_loadings(self):
+    def _fit_component_loadings(self, verbose, optimization_options):
+        # Reshape data if single point is provided
+        single_point = False
+        if self.loadings.ndim == 1:
+            single_point = True
+            self.loadings = self.loadings.reshape(1, -1)
+            self.partial_fug = self.partial_fug.reshape(1, -1)
 
+        # Calculate important variables for least squares fitting
         points = len(self.partial_fug)
         q_total = np.sum(self.loadings, axis=1)
         xs = self.loadings / q_total[:, None]
@@ -684,6 +333,7 @@ class ActivityCoefficient:
             def residuals(phi, x):
                 for i in range(len(self.isotherms)):
                     p0[i] = self.isotherms[i].p0(phi)
+
                 q0 = np.array([self.isotherms[i].loading(p0[i])
                                 for i in range(len(self.isotherms))])
                 q_excess = self.inverse_excess_loading(x, phi)
@@ -753,9 +403,10 @@ class ActivityCoefficient:
             return cast('float', brentq(residuals, phi_low, phi_high, args=(x,)))
 
         def residuals(params):
-            num_params = len(self.param_names)
-            self.model_parameters = {self.param_names[i]: params[i]
-                                     for i in range(num_params)}
+            num_params = len(params)
+
+            self.model_parameters.update({self.param_names[i]: params[i]
+                                     for i in range(num_params)})
 
             res = np.zeros(points * 2)
 
@@ -776,17 +427,32 @@ class ActivityCoefficient:
         bounds = [[self.param_bounds[param][0] for param in self.param_names],
                   [self.param_bounds[param][1] for param in self.param_names]]
 
+        # Enable single point fitting if only one data point is provided
+        if single_point:
+            initial_guess = initial_guess[:-1]
+            bounds = [bounds[0][:-1], bounds[1][:-1]]
+            self.model_parameters['C'] = self.c
+
         fitting_inputs = {
             'fun': residuals,
             'x0': initial_guess,
             'bounds': bounds,
             'xtol': self.param_tol,
         }
+        # Update fitting inputs with any user-provided optimization options
+        if optimization_options is not None:
+            fitting_inputs.update(optimization_options)
         res = least_squares(**fitting_inputs)
+
         if not res.success:
             raise RuntimeError(f'Component loading fit failed: {res.message}. Try a '
                                'different initial guess or check data quality.')
+        # Print residuals if verbose
+        if verbose:
+            print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')
+            print(f'Residual Sum of Squares: {res.cost}')
+
         # Assign final parameters to model
-        num_params = len(self.param_names)
-        self.model_parameters = {self.param_names[i]: res.x[i]
-                                 for i in range(num_params)}
+        num_params = len(res.x)
+        self.model_parameters.update({self.param_names[i]: res.x[i]
+                                 for i in range(num_params)})
