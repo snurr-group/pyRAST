@@ -6,7 +6,8 @@ import scipy.optimize
 
 
 def iast(partial_pressures, isotherms, *, verbose: bool = False,
-         warningoff: bool = False, adsorbed_mole_fraction_guess = None):
+         warningoff: bool = False, adsorbed_mole_fraction_guess = None,
+         solver_options: dict | None = None):
     """Performs forward IAST calculation to predict mixture adsorption.
 
     The IAST calculation is performed by solving for the adsorbed phase mole fractions
@@ -29,6 +30,10 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
             adsorbed phase mole fractions. Length must match number of components. If
             not provided, defaults to pure-component loadings at the given partial
             pressures.
+        solver_options (dict, optional): Dictionary of options to pass to
+            scipy.optimize.root for solving the IAST equations. This will override the
+            default options used by pyRAST. All options accepted by scipy.optimize.root
+            are valid here.
 
     Returns:
         np.ndarray: Loadings of each component in the adsorbed phase.
@@ -100,7 +105,15 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
     u_guess = np.log(adsorbed_mole_fraction_guess[:-1] / \
                      adsorbed_mole_fraction_guess[-1])
 
-    res = scipy.optimize.root(spreading_pressure_differences, u_guess, method='lm')
+    solver_inputs = {
+        'fun': spreading_pressure_differences,
+        'x0': u_guess,
+        'method': 'lm',
+    }
+    if solver_options is not None:
+        solver_inputs.update(solver_options)
+
+    res = scipy.optimize.root(**solver_inputs)
 
     if not res.success:
         print(res.message)
@@ -160,7 +173,7 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
 
 def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
                  verbose: bool = False, warningoff: bool = False,
-                 gas_mole_fraction_guess = None):
+                 gas_mole_fraction_guess = None, solver_options: dict | None = None):
     """Performs reverse IAST calculation to predict gas phase of adsorbed solution.
 
     The IAST calculation is performed by solving for the gas phase mole fractions
@@ -182,6 +195,10 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
         gas_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
             gas phase mole fractions. Length must match number of components. If
             not provided, defaults to the adsorbed mole fractions.
+        solver_options (dict, optional): Dictionary of options to pass to
+            scipy.optimize.root for solving the IAST equations. This will override the
+            default options used by pyRAST. All options accepted by scipy.optimize.root
+            are valid here.
 
     Returns:
         tuple: (np.ndarray of gas phase mole fractions, np.ndarray of loadings)
@@ -252,7 +269,14 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
     # Transform initial guess to unconstrained space for root finding
     u_guess = np.log(gas_mole_fraction_guess[:-1] / gas_mole_fraction_guess[-1])
 
-    res = scipy.optimize.root(spreading_pressure_differences, u_guess, method='lm')
+    solver_inputs = {
+        'fun': spreading_pressure_differences,
+        'x0': u_guess,
+        'method': 'lm',
+    }
+    if solver_options is not None:
+        solver_inputs.update(solver_options)
+    res = scipy.optimize.root(**solver_inputs)
 
     if not res.success:
         print(res.message)

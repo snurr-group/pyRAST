@@ -10,7 +10,8 @@ from pyrast.activity_coefficients import ActivityCoefficient
 
 def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient, *,
          verbose: bool = False, warningoff: bool = False,
-         adsorbed_mole_fraction_guess = None, phi_guess: float = 1.0):
+         adsorbed_mole_fraction_guess = None, phi_guess: float = 1.0,
+         solver_options: dict | None = None):
     """Performs forward RAST calculation to predict mixture adsorption.
 
     The RAST calculation is performed by solving for the adsorbed phase mole fractions
@@ -42,6 +43,10 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
         phi_guess (float, optional): Initial guess for spreading pressure. Default is
             1.0. This is used in the root finding for the RAST equations and can be
             adjusted if the default guess does not lead to convergence.
+        solver_options (dict, optional): Dictionary of options to pass to
+            scipy.optimize.root for solving the RAST equations. This will override the
+            default options used by pyRAST. All options accepted by scipy.optimize.root
+            are valid here.
 
     Returns:
         np.ndarray: Loadings of each component in the adsorbed phase.
@@ -117,7 +122,15 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
     guess = np.concatenate((u_guess, [s_guess]))
 
     # Solve for mole fractions in adsorbed phase and spreading pressure
-    res = scipy.optimize.root(rast_equations, guess, method='lm')
+    solve_inputs = {
+        'fun': rast_equations,
+        'x0': guess,
+        'method': 'lm',
+    }
+    if solver_options is not None:
+        solve_inputs.update(solver_options)
+
+    res = scipy.optimize.root(**solve_inputs)
 
     if not res.success:
         print(res.message)
@@ -186,7 +199,7 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
 def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
                  activity_coefficient: ActivityCoefficient, *, verbose: bool = False,
                  warningoff: bool = False, gas_mole_fraction_guess = None,
-                 phi_guess: float = 1.0):
+                 phi_guess: float = 1.0, solver_options: dict | None = None):
     """Performs reverse RAST calculation to predict gas phase of adsorbed solution.
 
     The RAST calculation is performed by solving for the gas phase mole fractions and
@@ -217,6 +230,10 @@ def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
         phi_guess (float, optional): Initial guess for spreading pressure. Default is
             1.0. This is used in the root finding for the RAST equations and can be
             adjusted if the default guess does not lead to convergence.
+        solver_options (dict, optional): Dictionary of options to pass to
+            scipy.optimize.root for solving the RAST equations. This will override the
+            default options used by pyRAST. All options accepted by scipy.optimize.root
+            are valid here.
 
     Returns:
         tuple: (np.ndarray of gas phase mole fractions, np.ndarray of loadings)
@@ -293,7 +310,15 @@ def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
     guess = np.concatenate((u_guess, [phi_guess]))
 
     # Solve for gas phase mole fractions and spreading pressure
-    res = scipy.optimize.root(rast_equations, guess, method='lm')
+    solve_inputs = {
+        'fun': rast_equations,
+        'x0': guess,
+        'method': 'lm',
+    }
+    if solver_options is not None:
+        solve_inputs.update(solver_options)
+
+    res = scipy.optimize.root(**solve_inputs)
 
     if not res.success:
         print(res.message)
