@@ -3,7 +3,9 @@
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import brentq, least_squares
+from scipy.integrate import cumulative_trapezoid
+from scipy.interpolate import PchipInterpolator
+from scipy.optimize import brentq, least_squares, root
 
 
 class ModelIsotherm:
@@ -59,10 +61,12 @@ class ModelIsotherm:
             ModelIsotherm._MODELS[model_name] = cls
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str,
-                 model: str, model_parameters: dict | None = None,
+                 model: str, *, model_parameters: dict | None = None,
                  param_guess: dict | None = None,
                  param_bounds: dict | None = None,
-                 optimization_options: dict | None = None):
+                 optimization_options: dict | None = None,
+                 vst_n: int | None = None, vst_p: tuple | None = None,
+                 vst_root_options: dict | None = None):
         """Initializes instances of analytical model isotherms.
 
         Args:
@@ -82,13 +86,24 @@ class ModelIsotherm:
             optimization_options(dict, optional): Dictionary of options to pass to
                 scipy.optimize.least_squares. Only needed if the default optimization
                 options are not sufficient for fitting.
+            vst_n (int, optional): Number of points to interpolate between. A high
+                number of points will use more memory but more accurately represent the
+                isotherm. Default is 300 points.
+            vst_p (tuple, optional): Tuple of the lowest and highest pressures to
+                interpolate between. The lowest number should be a small number, but
+                nonzero. Default is (1e-6, 1e40)
+            vst_root_options(dict, optional): Dictionary of options to pass to
+                scipy.optimize.root for solving loading from pressure. This will
+                override the default options used by pyRAST. The default guess is the
+                maximum loading in the input data. All options accepted by
+                scipy.optimize.root are valid here.
 
         Raises:
             ValueError: If model is not valid, loading or pressure keys not in df,
                 model_parameters keys do not match self.param_names, or param_guess keys
                 do not match self.param_names.
-
         """
+        from pyrast.isotherms import is_vst
 
         # Store model type
         self.model = model
@@ -132,19 +147,80 @@ class ModelIsotherm:
 
         # Fit model to data
         self.model_parameters = dict.fromkeys(self.param_names, np.nan)
+        if is_vst(model):
+            self.vst_root_options = vst_root_options
         self._fit(optimization_options)
+
+        # For VST only, create interpolations after fitting for speed
+        if is_vst(model):
+            self._initialize_vst(vst_n, vst_p)
 
     def __repr__(self):
         return (f'{self.name} Isotherm with parameters: {self.model_parameters}'
                 f', guess: {self.param_guess}, and RMSE: {self.rmse}')
 
     def loading(self, pressure):
-        """Returns loading at given pressure if implemented by subclass."""
+        """Returns loading as a function of pressure (or fugacity).
+
+        This method contains a root solving scheme for VST isotherms to use during
+        fitting. All other implemented isotherms have analytical expressions for
+        loading.
+
+        Args:
+            pressure(float or np.ndarray): pressure(s) at which to calculate loading
+
+        Returns:
+            float or np.ndarray: loading as same variable type as input
+
+        Raises:
+            RuntimeError: If the root solving routine fails.
+        """
+        from pyrast.isotherms import is_vst
+
+        # Root solving for loading during VST fitting
+        if is_vst(self.model):
+            # Collect all input as an array
+            pressure_array = np.asarray(pressure)
+            scalar_input = pressure_array.shape == ()
+            pressure_values = np.atleast_1d(pressure_array).astype(float)
+
+            # Root finding for loading for a single pressure point
+            def solve_single(target_pressure):
+                if target_pressure <= 0:
+                    return 0.0
+
+                def fun(x):
+                    return self.pressure(x) - target_pressure
+                solver_options = {
+                    'fun': fun,
+                    'x0': [self.df[self.loading_key].max()],
+                    'method': 'lm',
+                }
+                if self.vst_root_options is not None:
+                    solver_options.update(self.vst_root_options)
+
+                res = root(**solver_options)
+                if not res.success:
+                    raise RuntimeError('Root finding failed for pressure '
+                                       f'{target_pressure}. The routine failed with '
+                                        f'message: {res.message}')
+                return res.x.item()
+
+            # Solve for loading at all pressure points specified
+            loading = np.array([solve_single(target_pressure)
+                                for target_pressure in pressure_values])
+            if scalar_input:
+                return loading.item()
+            # Return loading array outputs in same shape as pressure input
+            return loading.reshape(pressure_array.shape)
+
+        # If any other model tries to call the parent class function, raise exception
         raise NotImplementedError('loading method not implemented for this model.')
 
     def spreading_pressure(self, pressure):
         """Returns spreading pressure at given pressure if implemented by subclass."""
-        raise NotImplementedError('spreading_pressure method not implemented.')
+        raise NotImplementedError('spreading_pressure method not implemented for this '
+                                  'model.')
 
     def p0(self, target_phi):
         """Returns p0 at given spreading pressure if not implemented by subclass.
@@ -160,8 +236,12 @@ class ModelIsotherm:
         return brentq(lambda p: self.spreading_pressure(p) - target_phi, p_lo, p_hi)
 
     def pressure(self, loading):
-        """For VST models"""
-        return NotImplementedError('pressure method not implemented for this model.')
+        """Returns loading as a function of pressure (or fugacity).
+
+        This method is only used by VST models and is overwritten by methods in the
+        subclasses.
+        """
+        return NotImplementedError('Pressure method not implemented for this model.')
 
     def initial_guess(self):
         """Returns initial guess for model parameters.
@@ -199,6 +279,50 @@ class ModelIsotherm:
             elif value > bounds[1]:
                 guess[param] = bounds[1]
         return guess
+
+    def _initialize_vst(self, vst_n, vst_p):
+        """Builds loading, spreading pressure, and p0 interpolators for VST isotherms.
+
+        This method takes some of the logic from the CubicIsotherm class to build
+        interpolators without error. Interpolators are needed to make VST models run
+        at a usable speed. Without interpolation, we would need to constantly apply
+        root solving and numerical integration to fit activity coefficients and perform
+        RAST calculations.
+        """
+        vst_n = vst_n if vst_n is not None else 300
+        vst_p = vst_p if vst_p is not None else (1e-6, 1e40)
+
+        # Build logarithmically spaced pressure grid to interpolate on
+        p_grid = np.geomspace(vst_p[0], vst_p[1], vst_n)
+        loadings = self.loading(p_grid)
+        self.interp_load = PchipInterpolator(p_grid, loadings, extrapolate=False)
+
+        # Compute spreading pressure
+        ln_p_grid = np.log(p_grid)
+        spreading_grid = cumulative_trapezoid(loadings, ln_p_grid, initial=0.0)
+
+        # Guard against small negative numerical artifacts
+        if np.any(spreading_grid < 0):
+            spreading_grid = np.maximum(spreading_grid, 0.0)
+
+        # Drop repeated zeros to keep inverse interpolation monotonic
+        zero_indices = np.flatnonzero(spreading_grid == 0)
+        if zero_indices.size > 1:
+            keep_mask = np.ones_like(spreading_grid, dtype=bool)
+            keep_mask[zero_indices[1:]] = False
+            spreading_grid = spreading_grid[keep_mask]
+            p_grid = p_grid[keep_mask]
+
+        # Ensure strictly increasing spreading pressure for inverse interpolation
+        increasing_mask = np.r_[True, np.diff(spreading_grid) > 0]
+        spreading_grid = spreading_grid[increasing_mask]
+        p_grid = p_grid[increasing_mask]
+
+        # Build interpolators for spreading pressure and p0
+        self.interp_spread = PchipInterpolator(p_grid, spreading_grid,
+                                               extrapolate=False)
+        self.interp_p0 = PchipInterpolator(spreading_grid, p_grid,
+                                           extrapolate=False)
 
     def _fit(self, optimization_options: dict | None = None):
         """Fits the model to the data. Assigns parameters and RMSE.
