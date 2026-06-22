@@ -21,6 +21,7 @@ dev = [
     "pyrast[test,docs]",
     "pylint",
     "ruff",
+    "ipykernel",
 ]
 docs = [
     "sphinx",

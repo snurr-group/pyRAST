@@ -67,7 +67,7 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
             df_pressures = df_pressures[mask]
             df_loadings = df_loadings[mask]
 
-        ax.scatter(df_pressures, df_loadings, label = f'Isotherm {num + 1} data')
+        ax.scatter(df_pressures, df_loadings)
         if withfit:
             if pressures is not None:
                 pressure_range = pressures
@@ -78,7 +78,7 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
             loading_range = np.zeros(len(pressure_range))
             for i, p in enumerate(pressure_range):
                 loading_range[i] = isotherm.loading(p)
-            ax.plot(pressure_range, loading_range, label = f'Isotherm {num + 1} fit')
+            ax.plot(pressure_range, loading_range, label = isotherm.name)
 
     ax.set_xlabel('Pressure')
     ax.set_ylabel('Loading')
@@ -144,7 +144,7 @@ def plot_spreading_pressure(isotherms, *, xlogscale = False, ylogscale = False,
         phi_range = np.zeros(len(pressure_range))
         for i, p in enumerate(pressure_range):
             phi_range[i] = isotherm.spreading_pressure(p)
-        ax.plot(pressure_range, phi_range, label = f'Isotherm {num + 1} fit')
+        ax.plot(pressure_range, phi_range, label = isotherm.name)
 
     ax.set_xlabel('Pressure')
     ax.set_ylabel('Spreading Pressure')
@@ -214,7 +214,7 @@ def plot_p0(isotherms, *, xlogscale = False, ylogscale = False, pressures = None
         p0_range = np.zeros(len(pressure_range))
         for i, phi in enumerate(phi_range):
             p0_range[i] = isotherm.pressure(phi) #type: ignore
-        ax.plot(phi_range, p0_range, label = f'Isotherm {num + 1} fit')
+        ax.plot(phi_range, p0_range, label = isotherm.name)
 
     ax.set_xlabel('Spreading Pressure')
     ax.set_ylabel('P0')

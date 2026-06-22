@@ -253,7 +253,7 @@ def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
     if np.size(adsorbed_mole_fractions) != n_components:
         raise ValueError('Length of adsorbed_mole_fractions != number of isotherms.')
 
-    if np.sum(adsorbed_mole_fractions) != 1.0:
+    if not np.isclose(np.sum(adsorbed_mole_fractions), 1.0, atol=1e-4):
         raise ValueError('Sum of adsorbed mole fractions must be 1.0')
 
     if verbose:

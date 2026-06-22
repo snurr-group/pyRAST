@@ -13,6 +13,9 @@ from pyrast.isotherms.model_isotherm import ModelIsotherm
 
 class InterpolatorIsotherm:
     """Interpolates isotherm with linear interpolation."""
+
+    name = 'InterpolatorIsotherm'
+
     # Instance variables
     df: pd.DataFrame
     loading_key: str
@@ -277,9 +280,10 @@ class InterpolatorIsotherm:
                 at higher pressures. (Extrapolation can be dangerous!)
             '''))
 
-
 class CubicIsotherm:
     """Interpolates isotherm with monotonic cubic spline."""
+
+    name = 'CubicIsotherm'
 
     # Instance variables
     df: pd.DataFrame
