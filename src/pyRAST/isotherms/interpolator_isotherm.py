@@ -24,7 +24,7 @@ class InterpolatorIsotherm:
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
                  fill_value: float | None = None, extrap_method: str | None = None,
-                 extrap_p: float = 1e30, extrap_points: int = 100,
+                 extrap_p: float = 1e40, extrap_points: int = 100,
                  optimization_options: dict | None = None):
         """Initializes InterpolatorIsotherm utilizing linear interpolator.
 
@@ -295,7 +295,7 @@ class CubicIsotherm:
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
                  grid_points: int = 200, force_monotonic: bool = True,
-                 extrap_method: str | None = None, extrap_p: float = 1e20,
+                 extrap_method: str | None = None, extrap_p: float = 1e40,
                  extrap_points: int = 100, optimization_options: dict | None = None):
         """Initializes CubicIsotherm utilizing PCHIP interpolators.
 

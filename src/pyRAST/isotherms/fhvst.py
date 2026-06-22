@@ -17,7 +17,32 @@ class FHVST(ModelIsotherm, model_name='FH-VST'):
     interp_p0 = None
 
     def pressure(self, loading):
-        r"""UPDATE"""
+        r"""Calculates pressure as a function of loading.
+
+        Vacancy Solution Theory (VST) models are defined as functions of pressure.
+        Unfortunately, there is no analytical function for loading, spreading pressure,
+        or p0 as a result. This function is used in combination with root solving to
+        support fitting the VST isotherm with the Flory-Huggins activity coefficient
+        model. The Flory-Huggins VST isotherm has four parameters, two from the Langmuir
+        isotherm and one from the activity coefficient model.
+
+        Pressure in the Flory-Huggins VST isotherm is given as:
+
+        .. math::
+
+            P(q) = \left[\frac{M}{K} \frac{\theta}{1-\theta}\right]
+                \exp\left[\frac{\alpha_{1v}^2 \theta}{1 + \alpha_{1v} \theta}\right]
+
+        Source: Cochran, T. W., Kabel, R. L. & Danner, R. P. Vacancy solution theory of
+        adsorption using Flory-Huggins activity coefficient equations. AIChE Journal
+        31, 268-277 (1985).
+
+        Args:
+            Loading(float or np.ndarray): loadings(s) at which to calculate pressure
+
+        Returns:
+            float or np.ndarray: pressure as same variable type as input
+        """
         m = self.model_parameters['M']
         k = self.model_parameters['K']
         a1v = self.model_parameters['A1v']

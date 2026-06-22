@@ -22,15 +22,32 @@ class ANRTLVST(ModelIsotherm, model_name='aNRTL-VST'):
         Vacancy Solution Theory (VST) models are defined as functions of pressure.
         Unfortunately, there is no analytical function for loading, spreading pressure,
         or p0 as a result. This function is used in combination with root solving to
-        support fitting the VST isotherm with the Wilson activity coefficient model. The
-        Adsorption NRTL VST isotherm has three parameters, two from the Langmuir
-        isotherm and one from the activity coefficient model.
+        support fitting the VST isotherm with the Adsorption NRTL activity coefficient
+        model. The Adsorption NRTL VST isotherm has three parameters, two from the
+        Langmuir isotherm and one from the activity coefficient model.
 
         Pressure in the Adsorption NRTL VST isotherm is given as:
 
         .. math::
+            :nowrap:
 
-            P(q) = \frac{M}{K} \frac{\theta}{1-\theta} FINISH THIS
+            \begin{gather*}
+            P(q) = \left[\frac{M}{K} \frac{\theta}{1-\theta}\right]
+                \frac{\gamma_{1}}{\gamma_{\phi}} \\
+
+            \ln \gamma_1 = (1-\theta)^2 \left[\tau_{1\phi}\frac{G_{1\phi}-1}
+                {(1-\theta + \theta G_{1\phi})^2}\right] \\
+
+            \ln \gamma_\phi = \theta^2 \left[\tau_{\phi 1}\frac{G_{\phi 1}-1}
+                {(\theta + (1-\theta) G_{\phi 1})^2}\right] \\
+
+            G_{1\phi} = \exp(-\alpha \tau_{1\phi}),
+            \ G_{\phi 1} = \exp(-\alpha \tau_{\phi 1}),
+            \ \alpha = 0.3, \ \tau_{1\phi} = -\tau_{\phi 1}
+            \end{gather*}
+
+        Source: Tun, H. & Chen, C.-C. Prediction of mixed-gas adsorption equilibria from
+        pure component adsorption isotherms. AIChE Journal 66, e16243 (2020).
 
         Args:
             Loading(float or np.ndarray): loadings(s) at which to calculate pressure

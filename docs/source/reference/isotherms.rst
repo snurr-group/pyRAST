@@ -46,22 +46,22 @@ Henry
 .. autoclass:: pyrast.isotherms.Henry
    :members:
 
-Wilson Vacancy Solution Theory
-------------------------------
+Wilson VST
+----------
 .. autoclass:: pyrast.isotherms.WVST
    :members:
 
-Flory-Huggins Vacancy Solution Theory
--------------------------------------
+Flory-Huggins VST
+-----------------
 .. autoclass:: pyrast.isotherms.FHVST
    :members:
 
-Adsorption NRTL Vacancy Solution Theory
----------------------------------------
+Adsorption NRTL VST
+-------------------
 .. autoclass:: pyrast.isotherms.ANRTLVST
    :members:
 
-Symmetric NRTL Vacancy Solution Theory
----------------------------------------
+Symmetric NRTL VST
+------------------
 .. autoclass:: pyrast.isotherms.SNRTLVST
    :members:

@@ -31,7 +31,15 @@ class WVST(ModelIsotherm, model_name='W-VST'):
 
         .. math::
 
-            P(q) = \frac{M}{K} \frac{\theta}{1-\theta} FINISH THIS
+            P(q) = \left[\frac{M}{K} \frac{\theta}{1-\theta}\right]
+                \left[\Lambda_{1v}\frac{1-(1-\Lambda_{v1})\theta}
+                {\Lambda_{1v}+(1-\Lambda_{1v})\theta}\right]
+                \exp\left[-\frac{\Lambda_{v1}(1-\Lambda_{v1})\theta}
+                {1-(1-\Lambda_{v1})\theta} - \frac{(1-\Lambda_{1v})\theta}{\Lambda_{1v}
+                +(1-\Lambda_{1v})\theta} \right]
+
+        Source: Suwanayuen, S. & Danner, R. P. A gas adsorption isotherm equation based
+        on vacancy solution theory. AIChE Journal 26, 68-76 (1980).
 
         Args:
             Loading(float or np.ndarray): loadings(s) at which to calculate pressure
@@ -46,7 +54,7 @@ class WVST(ModelIsotherm, model_name='W-VST'):
 
         cov = loading / m
         langmuir = m * cov / (k * (1.0 - cov))
-        wilson1 = l1v * (1.0 - (1.0 - l1v) * cov) / (l1v + (1.0 - l1v) * cov)
+        wilson1 = l1v * (1.0 - (1.0 - lv1) * cov) / (l1v + (1.0 - l1v) * cov)
         wilson2 = np.exp(- (lv1 * (1.0 - lv1) * cov)/(1.0 - (1.0 - lv1) * cov) -
                          ((1.0 - l1v) * cov)/(l1v + (1.0 - l1v) * cov))
         return langmuir * wilson1 * wilson2
