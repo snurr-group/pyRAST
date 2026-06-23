@@ -10,7 +10,7 @@ If you would like to see the full code for plotting, please refer to the Jupyter
 
 Isotherm Modeling
 -----------------
-We start by importing the necessary modules. pyRAST requires isotherm data to be in a pandas Dataframe.::
+We start by importing the necessary modules. pyRAST requires isotherm data to be in a pandas Dataframe. ::
 
     import pandas as pd
     from pyrast.isotherms import CubicIsotherm, ModelIsotherm

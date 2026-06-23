@@ -1,5 +1,5 @@
 [project]
-name = "pyRAST"
+name = "pyrast"
 version = "0.0.1"
 readme = "README.rst"
 keywords = ["adsorption", "thermodynamics", "isotherm"]
@@ -19,7 +19,6 @@ dependencies = [
 all = ["pyrast[dev,docs,test]"]
 dev = [
     "pyrast[test,docs]",
-    "pylint",
     "ruff",
     "ipykernel",
 ]
@@ -70,5 +69,3 @@ indent-style = "space"
 [build-system]
 requires=["setuptools"]
 build-backend = "setuptools.build_meta"
-
-
