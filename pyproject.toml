@@ -1,12 +1,12 @@
 [project]
 name = "pyrast"
-version = "0.0.1"
+version = "0.1.0"
 readme = "README.rst"
 keywords = ["adsorption", "thermodynamics", "isotherm"]
 requires-python = ">=3.6"
 license = {file = "LICENSE"}
 authors = [
-    {name = "Jonah Finkelstein", email = "jonahfinkelstein2003@gmail.com"}
+    {name = "Jonah Finkelstein", email = "jonahfinkelstein2030@u.northwestern.edu"}
 ]
 dependencies = [
     "numpy",
