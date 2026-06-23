@@ -1,4 +1,4 @@
-.. image:: https://raw.githubusercontent.com/snurr-group/pyRAST/main/source/_static/pyrast_logo_200x200.png
+.. image:: https://raw.githubusercontent.com/snurr-group/pyRAST/refs/heads/main/docs/source/_static/pyrast_logo_200x200.png
     :alt: pyRAST logo
     :align: center
     :width: 200px
