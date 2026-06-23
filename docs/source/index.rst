@@ -19,5 +19,5 @@ pyRAST
    :caption: Contents
    :hidden:
 
+   tutorial/index
    reference/index
-   examples/index
