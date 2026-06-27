@@ -11,7 +11,7 @@ from pyrast.isotherms import (
 
 
 def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = False,
-                  pressures = None, xlim = None, ylim = None):
+                  pressures = None, xlim = None, ylim = None, fugacity = False):
     """Plots isotherm data and fit for one or more isotherms.
 
     This function is useful for visualizing the quality of isotherm fits. It is
@@ -34,6 +34,8 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
             Default is None.
         ylim (tuple, optional): Tuple of the lower and upper limits for the y-axis.
             Default is None.
+        fugacity (bool, optional): Whether to make the x-axis fugacity instead of
+            pressure. Default is False.
 
     Returns:
         None: This function displays a plot and does not return anything.
@@ -80,13 +82,17 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
                 loading_range[i] = isotherm.loading(p)
             ax.plot(pressure_range, loading_range, label = isotherm.name)
 
-    ax.set_xlabel('Pressure')
+    if fugacity:
+        ax.set_xlabel('Fugacity')
+    else:
+        ax.set_xlabel('Pressure')
     ax.set_ylabel('Loading')
     ax.legend()
     plt.show()
 
 def plot_spreading_pressure(isotherms, *, xlogscale = False, ylogscale = False,
-                            pressures = None, xlim = None, ylim = None):
+                            pressures = None, xlim = None, ylim = None,
+                            fugacity = False):
     """Plots spreading pressure vs. pressure for one or more isotherms.
 
     This function is useful for visualizing the spreading pressure of isotherms, which
@@ -107,6 +113,8 @@ def plot_spreading_pressure(isotherms, *, xlogscale = False, ylogscale = False,
             Default is None.
         ylim (tuple, optional): Tuple of the lower and upper limits for the y-axis.
             Default is None.
+        fugacity (bool, optional): Whether to make the x-axis fugacity instead of
+            pressure. Default is False.
 
     Returns:
         None: This function displays a plot and does not return anything.
@@ -146,7 +154,10 @@ def plot_spreading_pressure(isotherms, *, xlogscale = False, ylogscale = False,
             phi_range[i] = isotherm.spreading_pressure(p)
         ax.plot(pressure_range, phi_range, label = isotherm.name)
 
-    ax.set_xlabel('Pressure')
+    if fugacity:
+        ax.set_xlabel('Fugacity')
+    else:
+        ax.set_xlabel('Pressure')
     ax.set_ylabel('Spreading Pressure')
     ax.legend()
     plt.show()

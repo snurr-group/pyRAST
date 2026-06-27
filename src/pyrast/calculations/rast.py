@@ -8,7 +8,7 @@ import scipy.optimize
 from pyrast.activity_coefficients import ActivityCoefficient
 
 
-def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient, *,
+def rast(partial_fugacities, isotherms, activity_coefficient: ActivityCoefficient, *,
          verbose: bool = False, warningoff: bool = False,
          adsorbed_mole_fraction_guess = None, phi_guess: float = 1.0,
          solver_options: dict | None = None):
@@ -16,20 +16,20 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
 
     The RAST calculation is performed by solving for the adsorbed phase mole fractions
     and spreading pressure that satisfy the RAST equations. The root finding is started
-    from an initial guess of the pure component loadings at the given partial pressures.
-    The RAST equations are solved in an unconstrained space using softmax and softplus
-    transformations to ensure valid mole fractions and spreading pressures. The final
-    loadings of each component are calculated from the solved mole fractions and
-    spreading pressure.
+    from an initial guess of the pure component loadings at the given partial
+    fugacities. The RAST equations are solved in an unconstrained space using softmax
+    and softplus transformations to ensure valid mole fractions and spreading pressures.
+    The final loadings of each component are calculated from the solved mole fractions
+    and spreading pressure.
 
     See documentation on activity coefficient models to understand how to use
     activity coefficients in RAST calculations.
 
     Args:
-        partial_pressures (list or np.ndarray): list of partial pressures of each
+        partial_fugacities (list or np.ndarray): list of partial fugacities of each
             component in the gas phase. Length must match number of isotherms.
         isotherms (list of analytical or interpolator isotherms): list of isotherm
-            objects for each component. Length must match length of partial_pressures.
+            objects for each component. Length must match length of partial_fugacities.
         activity_coefficient (ActivityCoefficient): Fitted ActivityCoefficient model for
             the binary mixture.
         verbose (bool, optional): If True, prints detailed information about the RAST
@@ -39,7 +39,7 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
         adsorbed_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
             adsorbed phase mole fractions. Length must match number of components. If
             not provided, defaults to pure-component loadings at the given partial
-            pressures.
+            fugacities.
         phi_guess (float, optional): Initial guess for spreading pressure. Default is
             1.0. This is used in the root finding for the RAST equations and can be
             adjusted if the default guess does not lead to convergence.
@@ -52,25 +52,25 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
         np.ndarray: Loadings of each component in the adsorbed phase.
 
     Raises:
-        ValueError: If number of isotherms does not match length of partial_pressures,
+        ValueError: If number of isotherms does not match length of partial_fugacities,
             if more or less than 2 isotherms are provided, if solved adsorbed mole
             fractions are not in [0,1].
         RuntimeError: If root finding for adsorbed phase mole fractions fails to
             converge.
     """
-    partial_pressures = np.asarray(partial_pressures)
+    partial_fugacities = np.asarray(partial_fugacities)
     n_components = len(isotherms)
 
     # Validate inputs
     if n_components != 2:
         raise ValueError('Exactly two isotherms are required for RAST calculations.')
-    if len(partial_pressures) != n_components:
-        raise ValueError('Length of partial_pressures must match number of isotherms.')
+    if len(partial_fugacities) != n_components:
+        raise ValueError('Length of partial_fugacities must match number of isotherms.')
 
     if verbose:
         print(f'Performing RAST calculation for {n_components} components.')
         for i in range(n_components):
-            print(f'Component {i}: Partial Pressure = {partial_pressures[i]},'
+            print(f'Component {i}: Partial Fugacity = {partial_fugacities[i]},'
                   f' Isotherm Model = {type(isotherms[i]).__name__}')
 
     def _softmax(u):
@@ -99,13 +99,13 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
         residuals = np.zeros(n_components)
         gamma = activity_coefficient.gamma(x, phi)
         for i in range(n_components):
-            p0 = partial_pressures[i] / x[i] / gamma[i]
+            p0 = partial_fugacities[i] / x[i] / gamma[i]
             residuals[i] = phi - isotherms[i].spreading_pressure(p0)
         return residuals
 
     if adsorbed_mole_fraction_guess is None:
-        # Default guess: pure-component loadings at these partial pressures
-        loading_guess = [isotherms[i].loading(partial_pressures[i]) for i in \
+        # Default guess: pure-component loadings at these partial fugacities
+        loading_guess = [isotherms[i].loading(partial_fugacities[i]) for i in \
                                                                     range(n_components)]
         loading_guess = np.asarray(loading_guess)
         adsorbed_mole_fraction_guess = loading_guess / np.sum(loading_guess)
@@ -156,7 +156,7 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
                          array or list 'adsorbed_mole_fraction_guess' to this function.
                          e.g. adsorbed_mole_fraction_guess=[0.2, 0.8]'''))
 
-    pressure0 = partial_pressures / adsorbed_mole_fractions / \
+    pressure0 = partial_fugacities / adsorbed_mole_fractions / \
                 activity_coefficient.gamma(adsorbed_mole_fractions, phi)
 
     # Solve for total gas adsorbed
@@ -175,7 +175,7 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
         # print RAST loadings and corresponding pure-component loadings
         for i in range(n_components):
             print('Component ', i)
-            print('\tp = ', partial_pressures[i])
+            print('\tp = ', partial_fugacities[i])
             print('\tp^0 = ', pressure0[i])
             print('\tLoading: ', loadings[i])
             print('\tx = ', adsorbed_mole_fractions[i])
@@ -196,7 +196,7 @@ def rast(partial_pressures, isotherms, activity_coefficient: ActivityCoefficient
     # return loadings [component 1, component 2, ...]. same units as in data
     return loadings
 
-def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
+def reverse_rast(adsorbed_mole_fractions, total_fugacity, isotherms,
                  activity_coefficient: ActivityCoefficient, *, verbose: bool = False,
                  warningoff: bool = False, gas_mole_fraction_guess = None,
                  phi_guess: float = 1.0, solver_options: dict | None = None):
@@ -215,9 +215,10 @@ def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
     Args:
         adsorbed_mole_fractions (list or np.ndarray): list of adsorbed mole fractions of
             each component in the adsorbed phase. Length must match number of isotherms.
-        total_pressure (float): Total pressure of the gas phase.
+        total_fugacity (float): Total fugacity of the gas phase.
         isotherms (list of analytical or interpolator isotherms): list of isotherm
-            objects for each component. Length must match length of partial_pressures.
+            objects for each component. Length must match length of
+            adsorbed_mole_fractions.
         activity_coefficient (ActivityCoefficient): Fitted ActivityCoefficient model for
             the binary mixture.
         verbose (bool, optional): If True, prints detailed information about the RAST
@@ -291,7 +292,7 @@ def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
         residuals = np.zeros(n_components)
         gamma = activity_coefficient.gamma(adsorbed_mole_fractions, phi)
         for i in range(n_components):
-            p0 = total_pressure * gas_mole_fractions[i] / adsorbed_mole_fractions[i] \
+            p0 = total_fugacity * gas_mole_fractions[i] / adsorbed_mole_fractions[i] \
                  / gamma[i]
             residuals[i] = phi - isotherms[i].spreading_pressure(p0)
         return residuals
@@ -342,7 +343,7 @@ def reverse_rast(adsorbed_mole_fractions, total_pressure, isotherms,
                          array or list 'gas_mole_fraction_guess' to this function.
                          e.g. gas_mole_fraction_guess=[0.2, 0.8]'''))
 
-    pressure0 = total_pressure * gas_mole_fractions / adsorbed_mole_fractions /\
+    pressure0 = total_fugacity * gas_mole_fractions / adsorbed_mole_fractions /\
                 activity_coefficient.gamma(adsorbed_mole_fractions, phi)
 
     # solve for the total gas adsorbed

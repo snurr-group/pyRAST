@@ -1,6 +1,6 @@
 [project]
 name = "pyrast"
-version = "0.1.0"
+version = "0.2.0"
 readme = "README.rst"
 keywords = ["adsorption", "thermodynamics", "isotherm"]
 requires-python = ">=3.6"

@@ -3,9 +3,7 @@
 from typing import cast
 
 import numpy as np
-from scipy.optimize import brentq, least_squares
-
-from pyrast.isotherms.interpolator_isotherm import CubicIsotherm, InterpolatorIsotherm
+from scipy.optimize import least_squares, root
 
 
 class ActivityCoefficient:
@@ -57,12 +55,14 @@ class ActivityCoefficient:
             ActivityCoefficient._MODELS[model_name] = cls
 
     def __init__(self, partial_fug: np.ndarray | list, loadings: np.ndarray | list,
-                 isotherms: list, model: str, *, total_loading: bool = False,
-                 verbose: bool = False, model_parameters: dict | None = None,
+                 isotherms: list, model: str, *, global_fit: bool = True,
+                 total_loading: bool = False, verbose: bool = False,
+                 model_parameters: dict | None = None,
                  c: float = 1, param_guess: dict | None = None, param_tol: float = 1e-6,
                  param_bounds: dict | None = None,
                  optimization_options: dict | None = None,
-                 root_bracketing_options: dict | None = None):
+                 rast_options: dict | None = None,
+                 root_options: dict | None = None):
         """Initializes an activity coefficient model.
 
         Activity coefficient models are used in real adsorbed solution theory (RAST) to
@@ -71,15 +71,17 @@ class ActivityCoefficient:
         mixture data. There are two ways to fit the model parameters:
 
         1) Component loadings: If the user provides component loadings for different
-        partial fugacities, the model parameters will be fit by minimizing the residual
-        between the predicted and observed activity coefficients for each component.
-        At each iteration, a 1D solver is used to find the spreading pressure that gives
-        the observed loading for each component. This approach is more reliable for
-        fitting activity coefficient models. If only one data point is provided, the
-        models can still be fit assuming a default value for the C parameter, which
-        can be adjusted by passing the 'c' argument. With multiple data points, the C
-        parameter will be used as an initial guess and fit along with the other model
-        parameters.
+        partial fugacities, the model parameters can be fit in two ways. The primary
+        approach is a global fit, where the model parameters are all fit simultaneously
+        by minimizing the residual between the observed and predicted component loadings
+        from a RAST calculation. This approach is recommended. The secondary approach is
+        a local fit, where the model parameters are fit all at once by minimizing the
+        residual between the observed and predicted activity coefficients for each
+        data point. Each data point requires a root finding calculation to determine
+        the spreading pressure that gives the observed total loading. This approach can
+        be slower, but is useful if the global approach fails to converge. Models can
+        be fit with a single data point if the C parameter is fixed, or with 2+ data
+        points to fit all model parameters simultaneously.
 
         2) Total loading: If the user provides total loadings for different partial
         fugacities, the model parameters will be fit by minimizing the residual
@@ -132,14 +134,14 @@ class ActivityCoefficient:
                 optimization when fitting to data. This is passed directly to
                 scipy.optimize.least_squares, so you can specify any options available
                 there. Default is None.
-            root_bracketing_options (dict, optional): Options for the root bracketing
-                when fitting from component loading data. This is passed as keyword
-                arguments to the _bracket_phi function that is used to find the
-                spreading pressure at each iteration. The default values for these
-                parameters are: phi_low=1e-12, phi_high=1.0, max_expand=60,
-                phi_cap=np.inf. Adjusting these parameters can help with finding a root
-                for phi, although if root finding continuously fails it is likely that
-                the model is not suitable for the system you are trying to fit.
+            rast_options (dict, optional): Options for the RAST solver when fitting
+                to component loadings using the global approach or total loadings. This
+                is passed directly to the rast method, so you can specify any options
+                available there. Default is None.
+            root_options (dict, optional): Options for the root-finding routine when
+                fitting to component loadings using the local approach. This is passed
+                directly to scipy.optimize.root, so you can specify any options
+                available there. Default is None.
 
         Returns:
             None: Model parameters are stored in self.model_parameters.
@@ -205,11 +207,14 @@ class ActivityCoefficient:
             if set(model_parameters.keys()) != set(self.param_names):
                 raise ValueError(f'model_parameters keys must be {self.param_names}.')
             self.model_parameters = model_parameters
-        elif not total_loading:
-            self._fit_component_loadings(verbose, optimization_options,
-                                         root_bracketing_options)
+        elif total_loading:
+            self._fit_total_loading(verbose, optimization_options, rast_options)
+        elif global_fit:
+            self._fit_component_loading_global(verbose, optimization_options,
+                                               rast_options)
         else:
-            self._fit_total_loading(verbose, optimization_options)
+            self._fit_component_loading_local(verbose, optimization_options,
+                                              root_options)
 
     def __repr__(self):
         """String representation of activity coefficient model."""
@@ -260,7 +265,7 @@ class ActivityCoefficient:
         raise NotImplementedError('inverse_excess_loading method must be implemented '
                                   'in subclass.')
 
-    def _fit_total_loading(self, verbose, optimization_options):
+    def _fit_total_loading(self, verbose, optimization_options, rast_options):
         """Fits model parameters to total loading data.
 
         This method fits the model parameters to the total loading data by minimizing
@@ -294,6 +299,13 @@ class ActivityCoefficient:
         partial_fug = np.asarray(self.partial_fug)
         points = len(partial_fug)
 
+        rast_inputs = {
+            'warningoff': True,
+            'solver_options': None,
+        }
+        if rast_options is not None:
+            rast_inputs.update(rast_options)
+
         def residuals(params):
             # Assign parameters to model
             num_params = len(self.param_names)
@@ -301,9 +313,15 @@ class ActivityCoefficient:
                                      for i in range(num_params)}
             res = np.zeros(points)
             for i in range(points):
-                q_total_pred = np.sum(rast(partial_fug[i], self.isotherms,
-                                           self))
-                res[i] = q_total_pred - self.loadings[i]
+                try:
+                    q_total_pred = np.sum(rast(partial_fug[i], self.isotherms, self,
+                                               **rast_inputs))
+                except RuntimeError as e:
+                    raise RuntimeError(f'RAST calculation failed during global fitting '
+                                       f'to total loadings. The error message was: '
+                                       f'{e}')
+                res[i] = (q_total_pred - self.loadings[i]) \
+                         / np.maximum(self.loadings[i], 1e-8)
             return res
 
         # Assign initial guess for parameters
@@ -337,9 +355,9 @@ class ActivityCoefficient:
         self.model_parameters = {self.param_names[i]: res.x[i]
                                  for i in range(num_params)}
 
-    def _fit_component_loadings(self, verbose, optimization_options,
-                                root_bracketing_options):
-        """Fits model parameters to component loading data.
+    def _fit_component_loading_local(self, verbose, optimization_options,
+                                     root_options):
+        """Fits model parameters to component loading data using a local approach.
 
         This method fits the model parameters to component loading data by minimizing
         the difference between the predicted and observed ln(activity coefficients).
@@ -357,19 +375,15 @@ class ActivityCoefficient:
                 fitting model parameters. This is passed directly to
                 scipy.optimize.least_squares, so you can specify any options available
                 there.
-            root_bracketing_options (dict): Options for the root bracketing when fitting
-                from component loading data. This is passed as keyword arguments to the
-                _bracket_phi function that is used to find the spreading pressure at
-                each iteration.
-
+            root_options (dict): Options for the root-finding optimization when solving
+                for phi. This is passed directly to scipy.optimize.root, so you can
+                specify any options available there.
         Returns:
             None: Model parameters are stored in self.model_parameters.
 
         Raises:
             RuntimeError: If the fit to component loadings fails to converge or if a
                 root cannot be found for the spreading pressure at any iteration.
-            ValueError: If residuals are not finite at the bracketing limits for root
-                finding.
         """
         # Reshape data if single point is provided
         single_point = False
@@ -385,90 +399,33 @@ class ActivityCoefficient:
 
         def solve_phi(x, q_total):
             p0 = np.zeros(len(self.isotherms))
+
             # Calculate residual for determining phi by total loading at given phi
-            def residuals(phi, x):
+            def equations(phi, x):
                 for i in range(len(self.isotherms)):
-                    p0[i] = self.isotherms[i].p0(phi)
+                    p0[i] = self.isotherms[i].p0(phi[0])
                 q0 = np.array([self.isotherms[i].loading(p0[i])
                                 for i in range(len(self.isotherms))])
                 q_excess = self.inverse_excess_loading(x, phi)
                 q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
                 return q_total_pred - q_total
 
-            # Use a bracketing strategy to ensure brentq can find a root. If a root is
-            # bracketed, then brentq is guaranteed to find it.
-            def _bracket_phi(x, residuals, *, phi_low, phi_high, max_expand, phi_cap):
-                # Determine the maximum phi based on isotherm extrapolation limits
-                def _phi_cap_for_isotherm(iso):
-                    if isinstance(iso, InterpolatorIsotherm):
-                        if iso.extrap_method is not None or iso.fill_value is not None:
-                            return iso.extrap_p
-                        p_max = iso.df[iso.pressure_key].max()
-                        return iso.spreading_pressure(p_max)
-                    if isinstance(iso, CubicIsotherm):
-                        if iso.extrap_method is not None:
-                            return iso.extrap_p
-                        p_max = iso.df[iso.pressure_key].max()
-                        return iso.spreading_pressure(p_max)
-                    return np.inf
+            root_inputs = {
+                'fun': equations,
+                'x0': 1e-6,
+                'args': (x,),
+                'method': 'lm',
+            }
+            if root_options is not None:
+                root_inputs.update(root_options)
 
-                # Compute the cap if there is one
-                caps = [_phi_cap_for_isotherm(iso) for iso in self.isotherms]
-                phi_cap = min(caps) if any(np.isfinite(caps)) else np.inf
-
-                # Check lower limit to ensure we don't start with an invalid point
-                f_low = residuals(phi_low, x)
-                if not np.isfinite(f_low):
-                    raise ValueError('Could not find finite residual at initial '
-                                     'phi_low. Try adjusting the bracketing '
-                                     'parameters, though this may indicate the model '
-                                     'is not suitable for this system.')
-
-                # Lower upper limit if necessary to find a finite residual
-                f_high = residuals(phi_high, x)
-                while not np.isfinite(f_high) and phi_high > phi_low:
-                    phi_high *= 0.9
-                    f_high = residuals(phi_high, x)
-
-                # Throw error if we can't find a finite residual at the upper limit
-                if not np.isfinite(f_high):
-                    raise ValueError('Could not find finite residual at initial '
-                                     'phi_high. Try adjusting the bracketing '
-                                     'parameters, though this may indicate the model'
-                                     'is not suitable for this system.')
-
-                # Expand upper limit until we bracket a root or hit the cap
-                for _ in range(max_expand):
-                    if np.isfinite(f_high) and np.sign(f_low) != np.sign(f_high):
-                        return phi_low, phi_high
-
-                    if np.isfinite(phi_cap) and phi_high >= phi_cap:
-                        break
-
-                    phi_high = min(phi_high * 2.0,
-                                phi_cap) if np.isfinite(phi_cap) else phi_high * 2.0
-                    f_high = residuals(phi_high, x)
-
-                    # if we just hit a NaN/inf, back off once
-                    if not np.isfinite(f_high):
-                        phi_high *= 0.5
-                        f_high = residuals(phi_high, x)
-                        if not np.isfinite(f_high):
-                            break
-
-                # If we exit the loop without finding a valid bracket, raise an error
-                raise RuntimeError('Could not bracket a root for phi. Try adjusting the'
-                                 ' bracketing parameters, though this may indicate the '
-                                 'model is not suitable for this system.')
-            # Prepare inputs for bracketing
-            bracketing_inputs = {'phi_low': 1e-12, 'phi_high': 1.0, 'max_expand': 60,
-                                 'phi_cap': np.inf}
-            if root_bracketing_options is not None:
-                bracketing_inputs.update(root_bracketing_options)
-
-            # Solve for phi with bracketed root finding
-            phi_low, phi_high = _bracket_phi(x, residuals, **bracketing_inputs)
-            return cast('float', brentq(residuals, phi_low, phi_high, args=(x,)))
+            # Solve for phi
+            res = root(**root_inputs)
+            if not res.success:
+                raise RuntimeError(f'Root finding for phi failed: {res.message}. Try a '
+                                   'different initial guess, modify the solver options,'
+                                   'or check data quality.')
+            return cast('float', res.x[0])
 
         def residuals(params):
             # Update model parameters that we are fitting
@@ -514,6 +471,108 @@ class ActivityCoefficient:
         if not res.success:
             raise RuntimeError(f'Component loading fit failed: {res.message}. Try a '
                                'different initial guess or check data quality.')
+        # Print residuals if verbose
+        if verbose:
+            print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')
+            print(f'Residual Sum of Squares: {res.cost}')
+
+        # Assign final parameters to model
+        num_params = len(res.x)
+        self.model_parameters.update({self.param_names[i]: res.x[i]
+                                 for i in range(num_params)})
+
+    def _fit_component_loading_global(self, verbose, optimization_options,
+                                      rast_options):
+        """Fits model parameters to component loading data using a global approach.
+
+        This method fits the model parameters to component loading data by minimizing
+        the difference between the observed and predicted component loadings from a RAST
+        calculation. It uses a least-squares approach to find the optimal parameters.
+        All model parameters can be fit simultaneously using 2+ data points, or
+        the C parameter can be fixed and the other parameters fit using a single data
+        point.
+
+        Args:
+            verbose (bool): If True, prints model parameters and residual information
+                after fitting.
+            optimization_options (dict): Options for the least-squares optimization when
+                fitting model parameters. This is passed directly to
+                scipy.optimize.least_squares, so you can specify any options available
+                there.
+            rast_options (dict): Options for the RAST calculation when solving
+                for phi. This is passed directly to the rast method, so you can specify
+                any options available there.
+        Returns:
+            None: Model parameters are stored in self.model_parameters.
+
+        Raises:
+            RuntimeError: If the fit to component loadings fails to converge or if a
+                rast calculation fails at any iteration.
+        """
+        # Import RAST here to avoid circular import issues
+        from pyrast.calculations.rast import rast
+
+        # Reshape data if single point is provided
+        single_point = False
+        if self.loadings.ndim == 1:
+            single_point = True
+            self.loadings = self.loadings.reshape(1, -1)
+            self.partial_fug = self.partial_fug.reshape(1, -1)
+
+        partial_fug = np.asarray(self.partial_fug)
+        points = len(partial_fug)
+
+        rast_inputs = {
+            'warningoff': True,
+            'solver_options': None,
+        }
+        if rast_options is not None:
+            rast_inputs.update(rast_options)
+
+        def residuals(params):
+            # Assign parameters to model
+            num_params = len(self.param_names)
+            self.model_parameters = {self.param_names[i]: params[i]
+                                     for i in range(num_params)}
+            res = np.zeros(points * 2)
+            for i in range(points):
+                try:
+                    q_pred = rast(partial_fug[i], self.isotherms, self, **rast_inputs)
+                except RuntimeError as e:
+                    raise RuntimeError(f'RAST calculation failed during global fitting '
+                                       f'to component loadings. The error message was: '
+                                       f'{e}')
+                res[2*i:2*i+2] = (q_pred - self.loadings[i]) \
+                                 / np.maximum(self.loadings[i], 1e-8)
+            return res
+
+        # Assign initial guess for parameters
+        initial_guess = list(self.param_guess.values())
+
+        # Enforce parameter bounds
+        bounds = [[self.param_bounds[param][0] for param in self.param_names],
+                  [self.param_bounds[param][1] for param in self.param_names]]
+
+        # Enable single point fitting if only one data point is provided
+        if single_point:
+            initial_guess = initial_guess[:-1]
+            bounds = [bounds[0][:-1], bounds[1][:-1]]
+            self.model_parameters['C'] = self.c
+
+        fitting_inputs = {
+            'fun': residuals,
+            'x0': initial_guess,
+            'bounds': bounds,
+            'xtol': self.param_tol,
+        }
+        if optimization_options is not None:
+            fitting_inputs.update(optimization_options)
+        res = least_squares(**fitting_inputs)
+
+        if not res.success:
+            raise RuntimeError(f'Total loading fit failed: {res.message}. Try a '
+                               'different initial guess or check data quality.')
+
         # Print residuals if verbose
         if verbose:
             print(f'Fitted parameters: {dict(zip(self.param_names, res.x))}')

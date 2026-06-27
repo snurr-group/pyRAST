@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from scipy.integrate import cumulative_trapezoid
 from scipy.interpolate import PchipInterpolator, interp1d
-from scipy.optimize import brentq
 
 from pyrast.isotherms.model_isotherm import ModelIsotherm
 
@@ -20,15 +19,16 @@ class InterpolatorIsotherm:
     df: pd.DataFrame
     loading_key: str
     pressure_key: str
-    interp1d: interp1d
-    fill_value: float | None = None
+    interp_load: interp1d
+    interp_spread: interp1d
+    interp_p0: interp1d
     extrap_method: str | None = None
     extrap_p: float
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
-                 fill_value: float | None = None, extrap_method: str | None = None,
-                 extrap_p: float = 1e40, extrap_points: int = 100,
-                 optimization_options: dict | None = None):
+                 grid_points: int = 200, force_monotonic: bool = False,
+                 extrap_method: str | None = None, extrap_p: float = 1e40,
+                 extrap_points: int = 100, optimization_options: dict | None = None):
         """Initializes InterpolatorIsotherm utilizing linear interpolator.
 
         This class uses the scipy.interpolate.interp1d, which is a linear interpolation
@@ -65,11 +65,11 @@ class InterpolatorIsotherm:
             ValueError: If loading_key or pressure_key are not in df or if extrap_method
                 is not recognized.
         """
+        # Store isotherm data in self
+        df = df.sort_values(by=pressure_key, ascending=True)
 
-        # If pressure = 0 not in data frame, add it for interpolation purposes
-        if 0.0 not in df[pressure_key].values:
-            df = pd.concat([pd.DataFrame({pressure_key: 0.0, loading_key: 0.0},
-                                         index=[0]), df])
+        # Preserve original df for user access and plotting
+        self.df = df.copy()
 
         # Check for valid inputs
         if None in [loading_key, pressure_key]:
@@ -79,52 +79,86 @@ class InterpolatorIsotherm:
         if pressure_key not in df.columns:
             raise ValueError(f'Pressure key {pressure_key} not found.')
 
-        # Store isotherm data in self
-        df = df.sort_values(by=pressure_key, ascending=True)
-        self.df = df.copy()
         self.loading_key = loading_key
         self.pressure_key = pressure_key
+
+        # Handle extrapolation method input
         if extrap_method == 'Linear':
             extrap_method = 'linear'
+        self.extrap_method = extrap_method
 
-        if fill_value is None and extrap_method is not None:
+        # Extrapolate data if desired
+        if extrap_method is not None:
             # If no fill value is provided, check for extrapolation method
             if extrap_method == 'linear' or extrap_method in ModelIsotherm._MODELS:
+                self.extrap_method = extrap_method
+                self.extrap_p = extrap_p
                 df = _build_extrapolated_df(df, loading_key, pressure_key,
                                             extrap_method, extrap_p, extrap_points,
                                             optimization_options)
-                self.interp1d = interp1d(self.df[pressure_key], self.df[loading_key])
-                self.extrap_p = extrap_p
             else:
                 raise ValueError(f'Extrapolation method {extrap_method} not recognized.'
                                  f' Choose from "linear" or '
                                  f'{list(ModelIsotherm._MODELS.keys())}.')
-        else:
-            self.interp1d = interp1d(self.df[pressure_key], self.df[loading_key],
-                                    fill_value=fill_value, bounds_error=False) # type:ignore
-            self.fill_value = fill_value
 
-    def loading(self, pressure: float):
+        # If pressure = 0 not in data frame, add it for interpolation purposes
+        if 0.0 not in df[pressure_key].values:
+            df = pd.concat([pd.DataFrame({pressure_key: 0.0, loading_key: 0.0},
+                                         index=[0]), df])
+
+        pressures = df[pressure_key].to_numpy()
+        loadings = df[loading_key].to_numpy()
+
+        # Ensure the isotherm is monotonic increasing if force_monotonic=True
+        if force_monotonic:
+            mask = loadings >= np.maximum.accumulate(loadings)
+            pressures = pressures[mask]
+            loadings = loadings[mask]
+
+        # Save information for loading interpolation
+        self.interp_load = interp1d(pressures, loadings)
+        self.henry_const = loadings[1] / pressures[1]  # Henry's law behavior enforced
+
+        # Now calculate spreading pressure and p0 ahead of time for speed
+        p_grid = np.geomspace(pressures[1], pressures[-1], grid_points)
+        p_grid[-1] = pressures[-1] # ensure last point is exactly  max pressure in data
+        loading_grid = np.array([self.loading(p) for p in p_grid])
+        ln_p_grid = np.log(p_grid)
+        spreading_grid = cumulative_trapezoid(loading_grid, ln_p_grid, initial=0.0)
+        spreading_grid += self.henry_const * pressures[1]
+
+        # Add zero point to ensure Henry's law behavior at low pressures
+        p_grid = np.concatenate(([0.0], p_grid))
+        spreading_grid = np.concatenate(([0.0], spreading_grid))
+
+        # Guard against small negative numerical artifacts
+        spreading_grid = np.maximum(spreading_grid, 0.0)
+
+        # Drop repeated zeros to keep inverse interpolation monotonic
+        zero_indices = np.flatnonzero(spreading_grid == 0)
+        if zero_indices.size > 1:
+            keep_mask = np.ones_like(spreading_grid, dtype=bool)
+            keep_mask[zero_indices[1:]] = False
+            spreading_grid = spreading_grid[keep_mask]
+            p_grid = p_grid[keep_mask]
+
+        # Ensure strictly increasing spreading pressure for inverse interpolation
+        increasing_mask = np.r_[True, np.diff(spreading_grid) > 0]
+        spreading_grid = spreading_grid[increasing_mask]
+        p_grid = p_grid[increasing_mask]
+
+        # Build interpolators for spreading pressure and p0
+        self.interp_spread = interp1d(p_grid, spreading_grid)
+        self.interp_p0 = interp1d(spreading_grid, p_grid)
+
+    def loading(self, pressure):
         """Loading at given pressure with interp1d."""
 
         # Henry's law behavior is enforced as interpolator is linear
-        return self.interp1d(pressure)
+        return self.interp_load(pressure)
 
     def spreading_pressure(self, pressure: float):
-        """Calculates reduced spreading pressure at a bulk gas pressure P.
-
-        Use numerical quadrature on isotherm data points to compute the reduced
-        spreading pressure via the integral:
-
-        .. math::
-
-            \\Pi(p) = \\int_0^p \\frac{q(\\hat{p})}{ \\hat{p}} d\\hat{p}.
-
-        In this integral, the isotherm :math:`q(\\hat{p})` is represented by a
-        linear interpolation of the data.
-
-        See C. Simon, B. Smit, M. Haranczyk. pyIAST: Ideal Adsorbed Solution
-        Theory (IAST) Python Package. Computer Physics Communications.
+        """Interpolates spreading pressure at given pressure.
 
         Args:
             pressure(float): Pressure at which to calculate spreading pressure.
@@ -140,9 +174,10 @@ class InterpolatorIsotherm:
             max_pressure = self.df[self.pressure_key].max()
         else:
             max_pressure = self.extrap_p
+
         # Update error message to also say increase extrap_p
-        if ((self.fill_value is None) and (pressure > max_pressure)):
-            raise Exception(dedent(f'''
+        if pressure > max_pressure:
+            raise RuntimeError(dedent(f'''
             To compute the spreading pressure at this bulk gas pressure, we would need
             to extrapolate the isotherm since this pressure is outside the range of the
             highest pressure in your pure-component isotherm data, {max_pressure}.
@@ -150,118 +185,6 @@ class InterpolatorIsotherm:
             At present, your InterpolatorIsotherm object is set to throw an
             exception when this occurs, as we do not have data outside this
             pressure range to characterize the isotherm at higher pressures.
-
-            Option 1: fit an analytical model to extrapolate the isotherm
-            Option 2: pass a `fill_value` to the construction of the
-                InterpolatorIsotherm object. Then, InterpolatorIsotherm will
-                assume that the uptake beyond pressure {max_pressure} is equal to
-                `fill_value`. This is reasonable if your isotherm data exhibits
-                a plateau at the highest pressures.
-            Option 3: pass an analytical model to the construction of the
-                InterpolatorIsotherm object using 'extrap_method'. Then,
-                InterpolatorIsotherm will use the analytical model to extrapolate the
-                isotherm beyond the highest pressure in your data.
-            Option 4: pass 'linear' to the construction of the InterpolatorIsotherm
-                object using 'extrap_method'. Then, InterpolatorIsotherm will fit a line
-                to the last two points in your data and use this line to extrapolate the
-                isotherm beyond the highest pressure in your data.
-            Option 5: Go back to the lab or computer to collect isotherm data
-                at higher pressures. (Extrapolation can be dangerous!)
-            '''))
-
-        # Get all data points that are at nonzero pressures
-        pressures = self.df[self.pressure_key].values[
-                    self.df[self.pressure_key].values != 0.0]
-        loadings = self.df[self.loading_key].values[
-                   self.df[self.pressure_key].values != 0.0]
-
-        # approximate loading up to first pressure point with Henry's law
-        # loading = henry_const * P
-        # henry_const is the initial slope in the adsorption isotherm
-        henry_const = loadings[0] / pressures[0]
-
-        # get how many of the points are less than pressure P
-        n_points = np.sum(pressures < pressure)
-
-        if n_points == 0:
-            # if this pressure is between 0 and first pressure point...
-            # \int_0^P henry_const P /P dP = henry_const * P ...
-            return henry_const * pressure
-
-        # P > first pressure point
-        area = loadings[0]  # area of first segment \int_0^P_1 n(P)/P dP
-
-        # get area between P_1 and P_k, where P_k < P < P_{k+1}
-        for i in range(n_points - 1):
-            # linear interpolation of isotherm data
-            slope = (loadings[i + 1] - loadings[i]) / (pressures[i + 1] - \
-                                                        pressures[i])
-            intercept = loadings[i] - slope * pressures[i]
-            # add area of this segment
-            area += slope * (pressures[i + 1] - pressures[i]) + intercept * \
-                                np.log(pressures[i + 1] / pressures[i])
-
-        # finally, area of last segment
-        slope = (self.loading(pressure) - loadings[n_points - 1]) / (
-            pressure - pressures[n_points - 1])
-        intercept = loadings[n_points -
-                                1] - slope * pressures[n_points - 1]
-        area += slope * (pressure - pressures[n_points - 1]) + intercept * \
-                                np.log(pressure / pressures[n_points - 1])
-
-        return area
-
-    def p0(self, target_phi: float):
-        """Interpolates p0 at given spreading pressure with Henry's law enforced.
-
-        Returns:
-            float: p0 at given spreading pressure
-
-        Raises:
-            RuntimeError: if extrapolation is required.
-        """
-        # Get all data points that are at nonzero pressures
-        pressures = self.df[self.pressure_key].values[
-                    self.df[self.pressure_key].values != 0.0]
-        loadings = self.df[self.loading_key].values[
-                   self.df[self.pressure_key].values != 0.0]
-
-        henry_const = loadings[0] / pressures[0]
-
-        phi_at_p1 = henry_const * pressures[0]
-        if target_phi <= phi_at_p1:
-            return target_phi / henry_const
-
-        # Accumulate phi segment by segment
-        phi = phi_at_p1
-        for i in range(len(pressures) - 1):
-            slope = (loadings[i+1] - loadings[i]) / (pressures[i+1] - pressures[i])
-            intercept = loadings[i] - slope * pressures[i]
-            phi_segment = (slope * (pressures[i+1] - pressures[i])
-                        + intercept * np.log(pressures[i+1] / pressures[i]))
-            phi_next = phi + phi_segment
-
-            if target_phi <= phi_next:
-                # target is within this segment — brentq over [p_i, p_{i+1}] only
-                phi_at_pi = phi
-                def residual(p):
-                    seg_area = (slope * (p - pressures[i])
-                                + intercept * np.log(p / pressures[i]))
-                    return phi_at_pi + seg_area - target_phi
-
-                return brentq(residual, pressures[i], pressures[i+1])
-
-            phi = phi_next
-
-        # target_phi is beyond the data range
-        raise RuntimeError(dedent('''
-            To compute p0 at this spreading pressure, we would need to extrapolate the
-            isotherm since this spreading pressure is outside the range of the maximum
-            spreading pressure in your pure-component isotherm data.
-
-            At present, your InterpolatorIsotherm object is set to throw an exception
-            when this occurs, as we do not have data outside this pressure range to
-            characterize the isotherm at higher pressures.
 
             If you have extrapolation enabled but are still seeing this error, increase
             the extrapolation pressure 'extrap_p' in the constructor of your
@@ -279,6 +202,51 @@ class InterpolatorIsotherm:
             Option 4: Go back to the lab or computer to collect isotherm data
                 at higher pressures. (Extrapolation can be dangerous!)
             '''))
+        return self.interp_spread(pressure)
+
+    def p0(self, target_phi: float):
+        """Interpolates p0 at given spreading pressure with Henry's law enforced.
+
+        Returns:
+            float: p0 at given spreading pressure
+
+        Raises:
+            RuntimeError: if extrapolation is required.
+        """
+        # Check if target_phi is beyond the data range
+        if self.extrap_method is None:
+            max_pressure = self.df[self.pressure_key].max()
+        else:
+            max_pressure = self.extrap_p
+        phi_at_max_p = self.spreading_pressure(max_pressure)
+        if target_phi > phi_at_max_p:
+            raise RuntimeError(dedent(f'''
+                To compute p0 at this spreading pressure {target_phi}, we would need to
+                extrapolate the isotherm since this spreading pressure is outside the
+                range of the maximum spreading pressure in your pure-component data
+                {phi_at_max_p}.
+
+                At present, your InterpolatorIsotherm object is set to throw an
+                exception when this occurs, as we do not have data outside this pressure
+                range to characterize the isotherm at higher pressures.
+
+                If you have extrapolation enabled but are still seeing this error,
+                increase the extrapolation pressure 'extrap_p' in the constructor of
+                your InterpolatorIsotherm object.
+
+                Option 1: use an analytical model instead of interpolation.
+                Option 2: pass an analytical model to the construction of the
+                    InterpolatorIsotherm object using 'extrap_method'. Then,
+                    InterpolatorIsotherm will use the analytical model to extrapolate
+                    the isotherm beyond the highest pressure in your data.
+                Option 3: pass 'linear' to the construction of the InterpolatorIsotherm
+                    object using 'extrap_method'. Then, InterpolatorIsotherm will fit a
+                    line to the last two points in your data and use this line to
+                    extrapolate the isotherm beyond the highest pressure in your data.
+                Option 4: Go back to the lab or computer to collect isotherm data
+                    at higher pressures. (Extrapolation can be dangerous!)
+                '''))
+        return self.interp_p0(target_phi)
 
 class CubicIsotherm:
     """Interpolates isotherm with monotonic cubic spline."""
@@ -298,7 +266,7 @@ class CubicIsotherm:
     extrap_p: float
 
     def __init__(self, df: pd.DataFrame, loading_key: str, pressure_key: str, *,
-                 grid_points: int = 200, force_monotonic: bool = True,
+                 grid_points: int = 200, force_monotonic: bool = False,
                  extrap_method: str | None = None, extrap_p: float = 1e40,
                  extrap_points: int = 100, optimization_options: dict | None = None):
         """Initializes CubicIsotherm utilizing PCHIP interpolators.
@@ -329,7 +297,8 @@ class CubicIsotherm:
                 pressure and p0 interpolation grids. Default is 200, which provides a
                 smooth isotherm in most cases.
             force_monotonic(bool, optional): Forces the isotherm to be monotonically
-                increasing. Disable this if your data is very noisy
+                increasing. This can help smooth out noisy data and prevent exceptions
+                from the interpolator. Default is False.
             extrap_method(str, optional): Method to extrapolate isotherm beyond max
                 pressure. Choose from 'linear' or any implemented analytical model.
             extrap_p(float, optional): Pressure up to which to extrapolate the isotherm
@@ -386,7 +355,7 @@ class CubicIsotherm:
         loadings = df[self.loading_key].values[
                     df[self.pressure_key].values != 0.0]
 
-        # Ensure the isotherm is monotonic increasing if force_monotonic=True (default)
+        # Ensure the isotherm is monotonic increasing if force_monotonic=True
         if force_monotonic:
             mask = loadings >= np.maximum.accumulate(loadings)
             pressures = pressures[mask]
@@ -401,13 +370,12 @@ class CubicIsotherm:
         p_grid = np.logspace(np.log10(pressures[0]), np.log10(pressures[-1]),
                              grid_points)
         p_grid[-1] = pressures[-1] # ensure last point is exactly  max pressure in data
-        loading_grid = [self.loading(p) for p in p_grid]
+        loading_grid = np.array([self.loading(p) for p in p_grid])
         ln_p_grid = np.log(p_grid)
         spreading_grid = cumulative_trapezoid(loading_grid, ln_p_grid, initial=0.0)
 
         # Guard against small negative numerical artifacts
-        if np.any(spreading_grid < 0):
-            spreading_grid = np.maximum(spreading_grid, 0.0)
+        spreading_grid = np.maximum(spreading_grid, 0.0)
 
         # Drop repeated zeros to keep inverse interpolation monotonic
         zero_indices = np.flatnonzero(spreading_grid == 0)
@@ -528,9 +496,10 @@ class CubicIsotherm:
         phi_at_max_p = self.spreading_pressure(max_pressure)
         if target_phi > phi_at_max_p:
             raise RuntimeError(dedent(f'''
-            To compute p0 at this spreading pressure, we would need to extrapolate the
-            isotherm since this spreading pressure is outside the range of the maximum
-            spreading pressure in your pure-component isotherm data, {phi_at_max_p}.
+            To compute p0 at this spreading pressure {target_phi}, we would need to
+            extrapolate the isotherm since this spreading pressure is outside the range
+            of the maximum spreading pressure in your pure-component isotherm data,
+            {phi_at_max_p}.
 
             At present, your CubicIsotherm object is set to throw an exception when this
             occurs, as we do not have data outside this pressure range to characterize

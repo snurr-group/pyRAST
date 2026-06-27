@@ -37,17 +37,17 @@ comp_q = np.concatenate((comp_q1, comp_q2, comp_q3, comp_q4, comp_q5))
 partial_fug = total_f[:, np.newaxis] * y
 # comp_q = np.sum(comp_q, axis=1)
 
-comp1_isotherm = ModelIsotherm(comp1_data.iloc[:], 'CH4_uptake_absolute[mol/kg]',
-                             'CH4_fugacity[Pa]', 'BET')
-print(comp1_isotherm)
+# comp1_isotherm = ModelIsotherm(comp1_data.iloc[:], 'CH4_uptake_absolute[mol/kg]',
+#                              'CH4_fugacity[Pa]', 'BET')
+# print(comp1_isotherm)
 
-comp2_isotherm = ModelIsotherm(df=comp2_data.iloc[:], loading_key='CO2_uptake_absolute[mol/kg]',
-                             pressure_key='CO2_fugacity[Pa]', model='W-VST')
-plot_isotherm([comp1_isotherm, comp2_isotherm], xlogscale=True)
-# comp1_isotherm = CubicIsotherm(df=comp1_data[:], loading_key='CH4_uptake_absolute[mol/kg]',
-#                              pressure_key='CH4_fugacity[Pa]', extrap_method='Langmuir', extrap_p = 1e40)
-# comp2_isotherm = CubicIsotherm(df=comp2_data[:], loading_key='CO2_uptake_absolute[mol/kg]',
-#                              pressure_key='CO2_fugacity[Pa]', extrap_method='Langmuir', extrap_p = 1e40)
+# comp2_isotherm = ModelIsotherm(df=comp2_data.iloc[:], loading_key='CO2_uptake_absolute[mol/kg]',
+#                              pressure_key='CO2_fugacity[Pa]', model='W-VST')
+# plot_isotherm([comp1_isotherm, comp2_isotherm], xlogscale=True)
+comp1_isotherm = CubicIsotherm(df=comp1_data[:], loading_key='CH4_uptake_absolute[mol/kg]',
+                             pressure_key='CH4_fugacity[Pa]', extrap_method='Langmuir', extrap_p = 1e40)
+comp2_isotherm = CubicIsotherm(df=comp2_data[:], loading_key='CO2_uptake_absolute[mol/kg]',
+                             pressure_key='CO2_fugacity[Pa]', extrap_method='Langmuir', extrap_p = 1e40)
 
 # total_f = np.asarray([2499+7496, 49896.22+49733.74, 489865.6+473764.2])
 # y = np.asarray([[0.25, 0.75], [0.5, 0.5], [0.5, 0.5]])
