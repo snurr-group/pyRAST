@@ -150,7 +150,7 @@ we will perform an IAST calculation for a 50/50 mixture of CO2 and N2 at 1e6 Pa 
     isotherms = [co2_isotherm, n2_isotherm]
     loadings = iast(partial_fugacities, isotherms)
     print(f"Predicted loadings: {loadings} mol/kg")
-    # Predicted loadings: [9.1319715  0.66377813] mol/kg
+    # Predicted loadings: [9.13550843 0.66089733] mol/kg
 
 The predicted loadings are 9.13 mol/kg for CO2 and 0.66 mol/kg for N2. The units of the loadings are the same as the units of the isotherm data. For
 more information about the calculations, we can use the 'verbose' keyword argument. ::
@@ -161,16 +161,16 @@ more information about the calculations, we can use the 'verbose' keyword argume
     #Component 1: Partial Pressure = 500000.0, Isotherm Model = CubicIsotherm
     #Component  0
     #    p =  500000.0
-    #    p^0 =  536343.637829884
-    #    Loading:  9.131971496765708
-    #    x =  0.93223814870456
-    #    Spreading pressure =  12.502853134175158
+    #    p^0 =  536171.8966459377
+    #    Loading:  9.135508426540186
+    #    x =  0.9325367538429119
+    #    Spreading pressure =  12.545999054819386
     #Component  1
     #    p =  500000.0
-    #    p^0 =  7378783.0533143645
-    #    Loading:  0.6637781295025508
-    #    x =  0.0677618512954399
-    #    Spreading pressure =  12.502853134175155
+    #    p^0 =  7411442.948294405
+    #    Loading:  0.6608973332258088
+    #    x =  0.06746324615708807
+    #    Spreading pressure =  12.545999054819385
 
 The verbose keyword shows why extrapolation can often be required. With a much higher loading of CO2, the N2 isotherm needs to be evaluated at
 a fugacity an order of magnitude larger than the CO2 isotherm.
@@ -229,7 +229,7 @@ For simplicity, we will use all of the binary data in the dataset to fit the act
 Like the isotherm objects, we can print information about the activity coefficient model. ::    
     
     print(ac)
-    # aNRTL activity coefficient model with parameters: {'t12': np.float64(0.35926880312556553), 'C': np.float64(116.88846098736295)}
+    # aNRTL activity coefficient model with parameters: {'t12': np.float64(-6.872376399172517e-05), 'C': np.float64(3.58319561026762)}
 
 Fitting activity coefficient models is as simple as that! There are important considerations for fitting that are discussed in the manuscript.
 Remember that fitting can be sensitive to the initial guess and data. Comparing C parameters across different models is not recommended.
@@ -248,28 +248,28 @@ a sample RAST calculation, then create x-y diagrams and selectivity plots for aN
     isotherms = [co2_isotherm, n2_isotherm]
     loadings = rast(partial_fugacities, isotherms, ac)
     print(f"Predicted loadings: {loadings} mol/kg")
-    #Predicted loadings: [9.11927749 0.68577407] mol/kg
+    #Predicted loadings: [9.13550843 0.66089733] mol/kg
 
 
-The predicted loadings are 9.12 mol/kg for CO2 and 0.69 mol/kg for N2. The units of the loadings are the same as the units of the isotherm data. For
+The predicted loadings are 9.14 mol/kg for CO2 and 0.66 mol/kg for N2. The units of the loadings are the same as the units of the isotherm data. For
 more information about the calculations, we can use the 'verbose' keyword argument. ::
 
     loadings = rast(partial_fugacities, isotherms, ac, verbose=True)
     #Performing RAST calculation for 2 components.
-    #Component 0: Partial Pressure = 500000.0, Isotherm Model = CubicIsotherm
-    #Component 1: Partial Pressure = 500000.0, Isotherm Model = CubicIsotherm
+    #Component 0: Partial Fugacity = 500000.0, Isotherm Model = CubicIsotherm
+    #Component 1: Partial Fugacity = 500000.0, Isotherm Model = CubicIsotherm
     #Component  0
     #    p =  500000.0
-    #    p^0 =  537718.1284465629
-    #    Loading:  9.119277486369585
-    #    x =  0.9300591063821719
-    #    Spreading pressure =  12.528305275167096
+    #    p^0 =  536171.8966928974
+    #    Loading:  9.135508426096102
+    #    x =  0.9325367537672508
+    #    Spreading pressure =  12.545999055705282
     #Component  1
-    #    p =  500000.0
-    #    p^0 =  7402131.809863134
-    #    Loading:  0.685774067657529
-    #    x =  0.06994089361782795
-    #    Spreading pressure =  12.528305275167098
+    #        p =  500000.0
+    #        p^0 =  7411442.94911436
+    #        Loading:  0.6608973339885112
+    #        x =  0.06746324623274924
+    #        Spreading pressure =  12.545999055705282
 
 Now, we will create an x-y diagram at 1e6 Pa total fugacity and a selectivity plot across many total fugacities for the aNRTL model.
 As stated before, the full plotting code is in the Jupyter notebook.
@@ -282,8 +282,15 @@ As stated before, the full plotting code is in the Jupyter notebook.
     :alt: aNRTL RAST Selectivity
     :align: center
 
-Notice how there is very little difference between IAST and RAST on the x-y diagram, but the selectivity plot shows that
-RAST is slightly more accurate at the lower fugacity range. Let's repeat this using the Van Laar model and see how it compares to the aNRTL model.
+Notice how there is very little difference between IAST and RAST on the x-y diagram and selectivity plot. Let's repeat this using the
+Van Laar model and see how it compares to the aNRTL model.
+
+When we try fitting to the Van Laar model, we encounter an exception that the adsorbed phase mole fraction solving failed.
+**By default, pyRAST uses a global fit method that performs a RAST calculation for each data point using the current model parameters.**
+This calculation can sometimes fail if the least squares fitting tries to evaluate the model with parameters that are not reasonable.
+To avoid this, we can use a *local fit method* that might work better here. The local fit method uses a residual based on activity coefficients
+instead of loadings. Generally, the global fit is recommended, but the local fit can be used as a backup. Alternatively, the *local fit can be used
+to determine model parameters, which can then be used as a "warm" initial guess for a global fit*. Let's see how the local fit performs.
 
 .. image:: ../_static/tutorial/tutorial_rast_xy_VanLaar.png
     :alt: Van Laar RAST x-y Diagram
@@ -338,7 +345,7 @@ used to fit the activity coefficient model with the keyword argument 'total_load
     isotherms = [co2_isotherm, n2_isotherm]
     ac = ActivityCoefficient(partial_fug, loadings, isotherms, 'aNRTL', total_loading=True)
     print(ac)
-    #aNRTL activity coefficient model with parameters: {'t12': np.float64(1.7801301750775367), 'C': np.float64(3.4981060928008114)}
+    #aNRTL activity coefficient model with parameters: {'t12': np.float64(2.6619919051194842), 'C': np.float64(190.95715618679833)}
 
 We can perform the same visualizations as before.
 

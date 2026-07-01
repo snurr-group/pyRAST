@@ -531,9 +531,9 @@ class ActivityCoefficient:
 
         def residuals(params):
             # Assign parameters to model
-            num_params = len(self.param_names)
-            self.model_parameters = {self.param_names[i]: params[i]
-                                     for i in range(num_params)}
+            num_params = len(params)
+            self.model_parameters.update({self.param_names[i]: params[i]
+                                     for i in range(num_params)})
             res = np.zeros(points * 2)
             for i in range(points):
                 try:
@@ -570,7 +570,7 @@ class ActivityCoefficient:
         res = least_squares(**fitting_inputs)
 
         if not res.success:
-            raise RuntimeError(f'Total loading fit failed: {res.message}. Try a '
+            raise RuntimeError(f'Component loading fit failed: {res.message} Try a '
                                'different initial guess or check data quality.')
 
         # Print residuals if verbose

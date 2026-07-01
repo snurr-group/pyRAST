@@ -77,6 +77,7 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
                 pressure_range = np.logspace(np.log10(df_pressures.min()),
                                             np.log10(df_pressures.max()),
                                             100)
+                pressure_range = np.floor(pressure_range)
             loading_range = np.zeros(len(pressure_range))
             for i, p in enumerate(pressure_range):
                 loading_range[i] = isotherm.loading(p)
@@ -149,6 +150,7 @@ def plot_spreading_pressure(isotherms, *, xlogscale = False, ylogscale = False,
             pressure_range = np.logspace(np.log10(df_pressures.min()),
                                         np.log10(df_pressures.max()),
                                         100)
+            pressure_range = np.floor(pressure_range)
         phi_range = np.zeros(len(pressure_range))
         for i, p in enumerate(pressure_range):
             phi_range[i] = isotherm.spreading_pressure(p)
@@ -219,6 +221,7 @@ def plot_p0(isotherms, *, xlogscale = False, ylogscale = False, pressures = None
             pressure_range = np.logspace(np.log10(df_pressures.min()),
                                         np.log10(df_pressures.max()),
                                         100)
+            pressure_range = np.floor(pressure_range)
         phi_range = np.zeros(len(pressure_range))
         for i, p in enumerate(pressure_range):
             phi_range[i] = isotherm.spreading_pressure(p)
