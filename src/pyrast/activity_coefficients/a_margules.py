@@ -15,7 +15,7 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
 
     The excess Gibbs free energy in the Asymmetric Margules model is given by:
 
-    .. math:: \frac{g^E}{RT} = x_1 x_2 (A_{12} x_2 + A_{21} x_1) (1 - e^{-C \phi})
+    .. math:: \frac{g^E}{RT} = x_1 x_2 (A_{12} x_2 + A_{21} x_1) (1 - e^{-C \Psi})
 
     Source: Krishna, R. & van Baten, J. M. How reliable is the Real Adsorbed Solution
     Theory (RAST) for estimating ternary mixture equilibrium in microporous host
@@ -27,19 +27,19 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
     param_default_bounds = ((-np.inf, np.inf), (-np.inf, np.inf), (0.0, np.inf))
     param_ideal_values = (0.0, 0.0)
 
-    def ln_gamma(self, x, phi):
+    def ln_gamma(self, x, psi):
         r"""Calculates the natural log of the activity coefficients for each component.
 
         In the Asymmetric Margules model, the activity coefficients are calculated as:
 
         .. math::
-            \ln \gamma_1 = x_2^2 (A_{12} + 2(A_{21} - A_{12}) x_1) (1 - e^{-C \phi})
+            \ln \gamma_1 = x_2^2 (A_{12} + 2(A_{21} - A_{12}) x_1) (1 - e^{-C \Psi})
 
-            \ln \gamma_2 = x_1^2 (A_{21} + 2(A_{12} - A_{21}) x_2) (1 - e^{-C \phi})
+            \ln \gamma_2 = x_1^2 (A_{21} + 2(A_{12} - A_{21}) x_2) (1 - e^{-C \Psi})
 
         Args:
             x (array-like): Mole fractions of the components in the mixture.
-            phi (float): Spreading pressure for the mixture.
+            psi (float): Reduced potential for the mixture.
 
         Returns:
             np.ndarray: Natural log of the activity coefficients for each component.
@@ -47,23 +47,23 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
         a12 = self.model_parameters['A12']
         a21 = self.model_parameters['A21']
         c = self.model_parameters['C']
-        f = 1.0 - np.exp(-c * phi)
+        f = 1.0 - np.exp(-c * psi)
         ln_gamma0 = x[1]**2 * f * (a12 + 2*(a21 - a12)*x[0])
         ln_gamma1 = x[0]**2 * f * (a21 + 2*(a12 - a21)*x[1])
         return np.array([ln_gamma0, ln_gamma1])
 
-    def inverse_excess_loading(self, x, phi):
-        r"""Calculates the inverse of the excess loading given composition and phi.
+    def inverse_excess_loading(self, x, psi):
+        r"""Calculates the inverse of the excess loading given composition and psi.
 
         The excess loading in the Asymmetric Margules model is calculated as:
 
         .. math::
             \left(\frac{1}{q}\right)^E = C x_1 x_2 (A_{12} x_2 + A_{21} x_1)
-            e^{-C \phi}
+            e^{-C \Psi}
 
         Args:
             x (array-like): Mole fractions of the components in the mixture.
-            phi (float): Spreading pressure for the mixture.
+            psi (float): Reduced potential for the mixture.
 
         Returns:
             float: Inverse of the excess loading for the mixture.
@@ -72,4 +72,4 @@ class AMargules(ActivityCoefficient, model_name='aMargules'):
         a21 = self.model_parameters['A21']
         c = self.model_parameters['C']
 
-        return c * x[0] * x[1] * np.exp(-c * phi) * (a12*x[1] + a21*x[0])
+        return c * x[0] * x[1] * np.exp(-c * psi) * (a12*x[1] + a21*x[0])

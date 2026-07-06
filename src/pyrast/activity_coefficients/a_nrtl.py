@@ -14,7 +14,7 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
 
     .. math::
         \frac{g^E}{RT} = \frac{x_1 x_2 \tau_{12} (G_{12} - 1)}
-            {x_1 G_{12} + x_2} (1 - e^{-C \phi})
+            {x_1 G_{12} + x_2} (1 - e^{-C \Psi})
 
         G_{12} = \exp(-\alpha \tau_{12}), \ \tau_{12} = -\tau_{21}, \ \alpha = 0.3
 
@@ -32,21 +32,21 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
     param_ideal_values = (1.0,)
     alpha = 0.3
 
-    def ln_gamma(self, x, phi):
+    def ln_gamma(self, x, psi):
         r"""Calculates the natural log of the activity coefficients for each component.
 
         In the Asymmetric NRTL model, the activity coefficients are calculated as:
 
         .. math::
             \ln \gamma_1 = \frac{x_2^2 \tau_{12} (G_{12} - 1)}{(x_1 G_{12} + x_2)^2}
-            (1 - e^{-C \phi})
+            (1 - e^{-C \Psi})
 
             \ln \gamma_2 = \frac{x_1^2 \tau_{21} (G_{21} - 1)}{(x_2 G_{21} + x_1)^2}
-            (1 - e^{-C \phi})
+            (1 - e^{-C \Psi})
 
         Args:
             x (array-like): Mole fractions of the components in the mixture.
-            phi (float): Spreading pressure for the mixture.
+            psi (float): Reduced potential for the mixture.
 
         Returns:
             np.ndarray: Natural log of the activity coefficients for each component.
@@ -54,7 +54,7 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
         t12 = self.model_parameters['t12']
         t21 = -t12
         c = self.model_parameters['C']
-        f = 1.0 - np.exp(-c * phi)
+        f = 1.0 - np.exp(-c * psi)
         alpha = self.alpha
         g12 = np.exp(-alpha*t12)
         g21 = np.exp(-alpha*t21)
@@ -63,17 +63,17 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
         ln_gamma1 = x[0]**2 * f * t21 * (g21 - 1.0) / (x[1] * g21 + x[0])**2
         return np.array([ln_gamma0, ln_gamma1])
 
-    def inverse_excess_loading(self, x, phi):
-        r"""Calculates the inverse of the excess loading given composition and phi.
+    def inverse_excess_loading(self, x, psi):
+        r"""Calculates the inverse of the excess loading given composition and psi.
 
         The excess loading in the Asymmetric NRTL model is calculated as:
 
         .. math:: \left(\frac{1}{q}\right)^E = \frac{x_1 x_2 \tau_{12} (G_{12} - 1)}
-            {x_1 G_{12} + x_2} C e^{-C \phi}
+            {x_1 G_{12} + x_2} C e^{-C \Psi}
 
         Args:
             x (array-like): Mole fractions of the components in the mixture.
-            phi (float): Spreading pressure for the mixture.
+            psi (float): Reduced potential for the mixture.
 
         Returns:
             float: Inverse of the excess loading for the mixture.
@@ -82,5 +82,5 @@ class ANRTL(ActivityCoefficient, model_name='aNRTL'):
         g12 = np.exp(-self.alpha*t12)
         c = self.model_parameters['C']
 
-        return c * x[0] * x[1] * t12 * (g12 - 1.0) * np.exp(-c * phi) / \
+        return c * x[0] * x[1] * t12 * (g12 - 1.0) * np.exp(-c * psi) / \
                (x[0]*g12 + x[1])

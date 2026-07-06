@@ -13,14 +13,14 @@ class ANRTLVST(ModelIsotherm, model_name='aNRTL-VST'):
     param_default_bounds = ((0., np.inf), (0., np.inf), (-np.inf, np.inf))
 
     interp_load = None
-    interp_spread = None
+    interp_rp = None
     interp_p0 = None
 
     def pressure(self, loading):
         r"""Calculates pressure as a function of loading.
 
         Vacancy Solution Theory (VST) models are defined as functions of pressure.
-        Unfortunately, there is no analytical function for loading, spreading pressure,
+        Unfortunately, there is no analytical function for loading, reduced potential,
         or p0 as a result. This function is used in combination with root solving to
         support fitting the VST isotherm with the Adsorption NRTL activity coefficient
         model. The Adsorption NRTL VST isotherm has three parameters, two from the
@@ -72,7 +72,7 @@ class ANRTLVST(ModelIsotherm, model_name='aNRTL-VST'):
         """Returns loading as a function of pressure (or fugacity).
 
         As vacancy solution models have implicit functions for loading, we must use
-        interpolated functions for loading, spreading pressure, and p0. Interpolants
+        interpolated functions for loading, reduced potential, and p0. Interpolants
         are built after fitting the models. Here, loading is calculated as a
         function of pressure using an interpolator, if built, or it defaults to the
         ModelIsotherm parent class, which uses root solving to determine loading
@@ -88,47 +88,47 @@ class ANRTLVST(ModelIsotherm, model_name='aNRTL-VST'):
             return self.interp_load(pressure)
         return super().loading(pressure)
 
-    def spreading_pressure(self, pressure):
-        """Returns spreading pressure as a function of pressure (or fugacity).
+    def reduced_potential(self, pressure):
+        """Returns reduced potential as a function of pressure (or fugacity).
 
         As vacancy solution models have implicit functions for loading, we must use
-        interpolated functions for loading, spreading pressure, and p0. Interpolants
-        are built after fitting the models. Here, spreading pressure is calculated as a
-        function of phi using an interpolator, if built, or it defaults to the
-        ModelIsotherm parent class, which will raise an exception. The spreading
-        pressure interpolator should always be built after model fitting.
+        interpolated functions for loading, reduced potential, and p0. Interpolants
+        are built after fitting the models. Here, reduced potential is calculated as a
+        function of pressure using an interpolator, if built, or it defaults to the
+        ModelIsotherm parent class, which will raise an exception. The reduced
+        potential interpolator should always be built after model fitting.
 
         Args:
-            pressure(float or np.ndarray): pressure(s) at which to calculate spreading
-                pressure
+            pressure(float or np.ndarray): pressure(s) at which to calculate reduced
+                potential
 
         Returns:
-            float or np.ndarray: spreading pressure as same variable type as input
+            float or np.ndarray: reduced potential as same variable type as input
         """
-        if self.interp_spread is not None:
-            return self.interp_spread(pressure)
+        if self.interp_rp is not None:
+            return self.interp_rp(pressure)
         # Fallback to the parent class method if no interpolation is available
-        return super().spreading_pressure(pressure)
+        return super().reduced_potential(pressure)
 
-    def p0(self, phi):
-        """Returns P0 as a function of spreading pressure.
+    def p0(self, psi):
+        """Returns P0 as a function of reduced potential.
 
         As vacancy solution models have implicit functions for loading, we must use
-        interpolated functions for loading, spreading pressure, and p0. Interpolants
-        are built after fitting the models. Here, p0 is calculated as a function of phi
+        interpolated functions for loading, reduced potential, and p0. Interpolants
+        are built after fitting the models. Here, p0 is calculated as a function of psi
         using an interpolator, if built, or it defaults to the ModelIsotherm parent
         class, which uses root solving.
 
         Args:
-            target_phi (float): Spreading pressure to calculate P0
+            psi (float): Reduced potential to calculate P0
 
         Returns:
             float: P0 value
         """
         if self.interp_p0 is not None:
-            return self.interp_p0(phi)
+            return self.interp_p0(psi)
         # Fallback to the parent class method if no interpolation is available
-        return super().p0(phi)
+        return super().p0(psi)
 
     def initial_guess(self):
         """Provides initial guess for model parameters.

@@ -91,24 +91,24 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
     ax.legend()
     plt.show()
 
-def plot_spreading_pressure(isotherms, *, xlogscale = False, ylogscale = False,
+def plot_reduced_potential(isotherms, *, xlogscale = False, ylogscale = False,
                             pressures = None, xlim = None, ylim = None,
                             fugacity = False):
-    """Plots spreading pressure vs. pressure for one or more isotherms.
+    """Plots reduced potential vs. pressure for one or more isotherms.
 
-    This function is useful for visualizing the spreading pressure of isotherms, which
-    is important for IAST and RAST calculations. Spreading pressure should be a
+    This function is useful for visualizing the reduced potential of isotherms, which
+    is important for IAST and RAST calculations. Reduced potential should be a
     continuous and monotonically increasing function of pressure.
 
     Args:
         isotherms (list or isotherm object): A single isotherm or list of isotherms to
-            plot spreading pressure for.
+            plot reduced potential for.
         xlogscale (bool, optional): Whether to use a logarithmic scale for the x-axis.
             Default is False.
         ylogscale (bool, optional): Whether to use a logarithmic scale for the y-axis.
             Default is False.
-        pressures (array-like, optional): Array of pressures to plot the spreading
-            pressure integral over. If not provided, the fit will be plotted over the
+        pressures (array-like, optional): Array of pressures to plot the reduced
+            potential integral over. If not provided, the fit will be plotted over the
             range of pressures in the isotherm data. Default is None.
         xlim (tuple, optional): Tuple of the lower and upper limits for the x-axis.
             Default is None.
@@ -151,25 +151,25 @@ def plot_spreading_pressure(isotherms, *, xlogscale = False, ylogscale = False,
                                         np.log10(df_pressures.max()),
                                         100)
             pressure_range = np.floor(pressure_range)
-        phi_range = np.zeros(len(pressure_range))
+        psi_range = np.zeros(len(pressure_range))
         for i, p in enumerate(pressure_range):
-            phi_range[i] = isotherm.spreading_pressure(p)
-        ax.plot(pressure_range, phi_range, label = isotherm.name)
+            psi_range[i] = isotherm.reduced_potential(p)
+        ax.plot(pressure_range, psi_range, label = isotherm.name)
 
     if fugacity:
         ax.set_xlabel('Fugacity')
     else:
         ax.set_xlabel('Pressure')
-    ax.set_ylabel('Spreading Pressure')
+    ax.set_ylabel('Reduced Potential')
     ax.legend()
     plt.show()
 
 def plot_p0(isotherms, *, xlogscale = False, ylogscale = False, pressures = None,
             xlim = None, ylim = None):
-    """Plots p0 vs. spreading pressure for one or more isotherms.
+    """Plots p0 vs. reduced potential for one or more isotherms.
 
-    This function is useful for visualizing the p0 vs. spreading pressure relationship
-    of isotherms, which is the inverse of plot_spreading_pressure.
+    This function is useful for visualizing the p0 vs. reduced potential relationship
+    of isotherms, which is the inverse of plot_reduced_potential.
 
     Args:
         isotherms (list or isotherm object): A single isotherm or list of isotherms to
@@ -222,15 +222,15 @@ def plot_p0(isotherms, *, xlogscale = False, ylogscale = False, pressures = None
                                         np.log10(df_pressures.max()),
                                         100)
             pressure_range = np.floor(pressure_range)
-        phi_range = np.zeros(len(pressure_range))
+        psi_range = np.zeros(len(pressure_range))
         for i, p in enumerate(pressure_range):
-            phi_range[i] = isotherm.spreading_pressure(p)
+            psi_range[i] = isotherm.reduced_potential(p)
         p0_range = np.zeros(len(pressure_range))
-        for i, phi in enumerate(phi_range):
-            p0_range[i] = isotherm.pressure(phi) #type: ignore
-        ax.plot(phi_range, p0_range, label = isotherm.name)
+        for i, psi in enumerate(psi_range):
+            p0_range[i] = isotherm.pressure(psi) #type: ignore
+        ax.plot(psi_range, p0_range, label = isotherm.name)
 
-    ax.set_xlabel('Spreading Pressure')
+    ax.set_xlabel('Reduced Potential')
     ax.set_ylabel('P0')
     ax.legend()
     plt.show()

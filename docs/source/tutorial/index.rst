@@ -14,7 +14,7 @@ We start by importing the necessary modules. pyRAST requires isotherm data to be
 
     import pandas as pd
     from pyrast.isotherms import CubicIsotherm, ModelIsotherm
-    from pyrast.utilities.plotting import plot_isotherm, plot_spreading_pressure
+    from pyrast.utilities.plotting import plot_isotherm, plot_reduced_potential
 
 Then, we will import the data: ::
 
@@ -29,7 +29,7 @@ We will work with two isotherm types here: ModelIsotherm and CubicIsotherm. To f
 The class takes in a pandas Dataframe containing the isotherm data, labels for the uptake and pressure columns, and the name of the analytical isotherm to fit.
 Positional or keyword arguments are accepted.
 The models currently supported are: *Langmuir, DSLangmuir, Henry, BET, TemkinApprox, and Quadratic*. There are also vacancy solution theory isotherms,
-which are created in the same way, but the loading, spreading pressure, and p^0 are stored as an interpolator. The available VST isotherms are: *W-VST, FH-VST, aNRTL-VST,
+which are created in the same way, but the loading, reduced potential, and p^0 are stored as an interpolator. The available VST isotherms are: *W-VST, FH-VST, aNRTL-VST,
 and sNRTL-VST*. 
 
 We will fit the CO2 isotherm to demonstrate. Note that we are using fugacity, not pressure. ::
@@ -65,20 +65,20 @@ a model name. ::
 
     co2_cubic = CubicIsotherm(co2_pure, 'CO2_uptake_absolute[mol/kg]', 'CO2_fugacity[Pa]')
 
-We can visualize the fits and spreading pressure integrals using the built-in plotting functions. These functions take in a single isotherm object or list of isotherm objects.
+We can visualize the fits and reduced potential integrals using the built-in plotting functions. These functions take in a single isotherm object or list of isotherm objects.
 We also use the parameter 'xlogscale' to set the x-axis to a logarithmic scale. ::
 
     # Visualize the fits
     plot_isotherm([co2_langmuir, co2_wvst, co2_cubic], xlogscale=True)
-    # Compare spreading pressures
-    plot_spreading_pressure([co2_langmuir, co2_wvst, co2_cubic], xlogscale=True)
+    # Compare reduced potentials
+    plot_reduced_potential([co2_langmuir, co2_wvst, co2_cubic], xlogscale=True)
 
 .. image:: ../_static/tutorial/tutorial_co2_isotherms.png
     :alt: CO2 Isotherm Fits
     :align: center
 
-.. image:: ../_static/tutorial/tutorial_co2_spreading_pressure.png
-    :alt: CO2 Spreading Pressure Integrals
+.. image:: ../_static/tutorial/tutorial_co2_reduced_potential.png
+    :alt: CO2 Reduced Potential Integrals
     :align: center
 
 We are currently only showing fits in the range of the data, but IAST and RAST calculations often require extrapolation to higher pressures.
@@ -164,13 +164,13 @@ more information about the calculations, we can use the 'verbose' keyword argume
     #    p^0 =  536171.8966459377
     #    Loading:  9.135508426540186
     #    x =  0.9325367538429119
-    #    Spreading pressure =  12.545999054819386
+    #    Reduced potential =  12.545999054819386
     #Component  1
     #    p =  500000.0
     #    p^0 =  7411442.948294405
     #    Loading:  0.6608973332258088
     #    x =  0.06746324615708807
-    #    Spreading pressure =  12.545999054819385
+    #    Reduced potential =  12.545999054819385
 
 The verbose keyword shows why extrapolation can often be required. With a much higher loading of CO2, the N2 isotherm needs to be evaluated at
 a fugacity an order of magnitude larger than the CO2 isotherm.
@@ -263,13 +263,13 @@ more information about the calculations, we can use the 'verbose' keyword argume
     #    p^0 =  536171.8966928974
     #    Loading:  9.135508426096102
     #    x =  0.9325367537672508
-    #    Spreading pressure =  12.545999055705282
+    #    Reduced potential =  12.545999055705282
     #Component  1
     #        p =  500000.0
     #        p^0 =  7411442.94911436
     #        Loading:  0.6608973339885112
     #        x =  0.06746324623274924
-    #        Spreading pressure =  12.545999055705282
+    #        Reduced potential =  12.545999055705282
 
 Now, we will create an x-y diagram at 1e6 Pa total fugacity and a selectivity plot across many total fugacities for the aNRTL model.
 As stated before, the full plotting code is in the Jupyter notebook.

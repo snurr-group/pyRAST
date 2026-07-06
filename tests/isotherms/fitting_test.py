@@ -8,7 +8,7 @@ from pyrast.calculations.iast import iast
 from pyrast.isotherms import (
     InterpolatorIsotherm,
     ModelIsotherm,
-    PCHIPInterpolatorIsotherm,
+    CubicIsotherm,
 )
 
 
@@ -264,16 +264,16 @@ def calculate_iast_interpolator(input_data: pd.DataFrame,
         n2 = get_single_loadings(mof, 'N2', temp).iloc[min_index:max_index]
 
         # fit isotherms to get parameters for IAST
-        butane_isotherm = PCHIPInterpolatorIsotherm(butane,
+        butane_isotherm = CubicIsotherm(butane,
                                                       loading_key='butane_uptake_absolute[mol/kg]',
                                                       pressure_key='butane_fugacity[Pa]')
-        ch4_isotherm = PCHIPInterpolatorIsotherm(ch4,
+        ch4_isotherm = CubicIsotherm(ch4,
                                                    loading_key='CH4_uptake_absolute[mol/kg]',
                                                    pressure_key='CH4_fugacity[Pa]')
-        co2_isotherm = PCHIPInterpolatorIsotherm(co2,
+        co2_isotherm = CubicIsotherm(co2,
                                                    loading_key='CO2_uptake_absolute[mol/kg]',
                                                    pressure_key='CO2_fugacity[Pa]')
-        n2_isotherm = PCHIPInterpolatorIsotherm(n2,
+        n2_isotherm = CubicIsotherm(n2,
                                                   loading_key='N2_uptake_absolute[mol/kg]',
                                                   pressure_key='N2_fugacity[Pa]')
         single_isotherms = {'butane': butane_isotherm, 'CH4': ch4_isotherm,

@@ -3,7 +3,7 @@ import pandas as pd
 
 from pyrast.calculations.iast import iast
 from pyrast.isotherms import CubicIsotherm, InterpolatorIsotherm, ModelIsotherm
-from pyrast.utilities.plotting import plot_isotherm, plot_p0, plot_spreading_pressure
+from pyrast.utilities.plotting import plot_isotherm, plot_p0, plot_reduced_potential
 
 ch4_data = pd.read_csv('/Users/jonah/Desktop/Research/IAST Project/pyRAST/tests/test_inputs/Cu-BTC_data/2014[Cu][tbo]3[ASR]7/2014[Cu][tbo]3[ASR]7_CH4_298K_isotherm.csv')
 #ch4_data = ch4_data[ch4_data['total_pressure[Pa]'] < 1e7]

@@ -32,21 +32,21 @@ class DSLangmuir(ModelIsotherm, model_name='DSLangmuir'):
         return self.model_parameters["M1"] * k1p / (1.0 + k1p) + \
                self.model_parameters["M2"] * k2p / (1.0 + k2p)
 
-    def spreading_pressure(self, pressure):
-        r"""Returns spreading pressure as a function of pressure (or fugacity).
+    def reduced_potential(self, pressure):
+        r"""Returns reduced potential as a function of pressure (or fugacity).
 
-        Spreading pressure in the Dual Site Langmuir model is given as:
+        Reduced potential in the Dual Site Langmuir model is given as:
 
         .. math::
 
-            \phi(P) = M_1\ln(1+K_1P) + M_2\ln(1+K_2P)
+            \Psi(P) = M_1\ln(1+K_1P) + M_2\ln(1+K_2P)
 
         Args:
-            pressure(float or np.ndarray): pressure(s) at which to calculate spreading
-                pressure
+            pressure(float or np.ndarray): pressure(s) at which to calculate reduced
+                potential
 
         Returns:
-            float or np.ndarray: spreading pressure as same variable type as input
+            float or np.ndarray: reduced potential as same variable type as input
         """
         return self.model_parameters["M1"] * np.log(
             1.0 + self.model_parameters["K1"] * pressure) +\

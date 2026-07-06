@@ -32,21 +32,21 @@ class BET(ModelIsotherm, model_name='BET'):
                 (1.0 - self.model_parameters['Kb'] * pressure +
                  self.model_parameters['Ka'] * pressure))
 
-    def spreading_pressure(self, pressure):
-        r"""Returns spreading pressure as a function of pressure (or fugacity).
+    def reduced_potential(self, pressure):
+        r"""Returns reduced potential as a function of pressure (or fugacity).
 
-        Spreading pressure in the BET model is given as:
+        Reduced potential in the BET model is given as:
 
         .. math::
 
-            \phi(P) = M\ln(\frac{1+K_AP-K_BP}{1-K_BP})
+            \Psi(P) = M\ln(\frac{1+K_AP-K_BP}{1-K_BP})
 
         Args:
-            pressure(float or np.ndarray): pressure(s) at which to calculate spreading
-                pressure
+            pressure(float or np.ndarray): pressure(s) at which to calculate reduced
+                potential
 
         Returns:
-            float or np.ndarray: spreading pressure as same variable type as input
+            float or np.ndarray: reduced potential as same variable type as input
         """
         return self.model_parameters["M"] * np.log(
             (1.0 - self.model_parameters['Kb'] * pressure +

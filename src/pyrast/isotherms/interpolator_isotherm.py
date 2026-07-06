@@ -20,7 +20,7 @@ class InterpolatorIsotherm:
     loading_key: str
     pressure_key: str
     interp_load: interp1d
-    interp_spread: interp1d
+    interp_rp: interp1d
     interp_p0: interp1d
     extrap_method: str | None = None
     extrap_p: float
@@ -47,8 +47,8 @@ class InterpolatorIsotherm:
             pressure_key(str): Column name in df corresponding to pressure data.
             fill_value(float, optional): If provided, this value is used as the loading
                 beyond the highest pressure in the data.
-            grid_points(int, optional): Number of points to use in the spreading
-                pressure and p0 interpolation grids. Default is 200, which provides a
+            grid_points(int, optional): Number of points to use in the reduced potential
+                and p0 interpolation grids. Default is 200, which provides a
                 smooth isotherm in most cases.
             extrap_method(str, optional): Method to extrapolate isotherm beyond max
                 pressure. Choose from 'linear' or any implemented analytical model.
@@ -119,37 +119,37 @@ class InterpolatorIsotherm:
         self.interp_load = interp1d(pressures, loadings)
         self.henry_const = loadings[1] / pressures[1]  # Henry's law behavior enforced
 
-        # Now calculate spreading pressure and p0 ahead of time for speed
+        # Now calculate reduced potential and p0 ahead of time for speed
         p_grid = np.geomspace(pressures[1], pressures[-1], grid_points)
         p_grid[-1] = pressures[-1] # ensure last point is exactly  max pressure in data
         loading_grid = np.array([self.loading(p) for p in p_grid])
         ln_p_grid = np.log(p_grid)
-        spreading_grid = cumulative_trapezoid(loading_grid, ln_p_grid, initial=0.0)
-        spreading_grid += self.henry_const * pressures[1]
+        rp_grid = cumulative_trapezoid(loading_grid, ln_p_grid, initial=0.0)
+        rp_grid += self.henry_const * pressures[1]
 
         # Add zero point to ensure Henry's law behavior at low pressures
         p_grid = np.concatenate(([0.0], p_grid))
-        spreading_grid = np.concatenate(([0.0], spreading_grid))
+        rp_grid = np.concatenate(([0.0], rp_grid))
 
         # Guard against small negative numerical artifacts
-        spreading_grid = np.maximum(spreading_grid, 0.0)
+        rp_grid = np.maximum(rp_grid, 0.0)
 
         # Drop repeated zeros to keep inverse interpolation monotonic
-        zero_indices = np.flatnonzero(spreading_grid == 0)
+        zero_indices = np.flatnonzero(rp_grid == 0)
         if zero_indices.size > 1:
-            keep_mask = np.ones_like(spreading_grid, dtype=bool)
+            keep_mask = np.ones_like(rp_grid, dtype=bool)
             keep_mask[zero_indices[1:]] = False
-            spreading_grid = spreading_grid[keep_mask]
+            rp_grid = rp_grid[keep_mask]
             p_grid = p_grid[keep_mask]
 
-        # Ensure strictly increasing spreading pressure for inverse interpolation
-        increasing_mask = np.r_[True, np.diff(spreading_grid) > 0]
-        spreading_grid = spreading_grid[increasing_mask]
+        # Ensure strictly increasing reduced potential for inverse interpolation
+        increasing_mask = np.r_[True, np.diff(rp_grid) > 0]
+        rp_grid = rp_grid[increasing_mask]
         p_grid = p_grid[increasing_mask]
 
-        # Build interpolators for spreading pressure and p0
-        self.interp_spread = interp1d(p_grid, spreading_grid)
-        self.interp_p0 = interp1d(spreading_grid, p_grid)
+        # Build interpolators for reduced potential and p0
+        self.interp_rp = interp1d(p_grid, rp_grid)
+        self.interp_p0 = interp1d(rp_grid, p_grid)
 
     def loading(self, pressure):
         """Loading at given pressure with interp1d."""
@@ -157,14 +157,14 @@ class InterpolatorIsotherm:
         # Henry's law behavior is enforced as interpolator is linear
         return self.interp_load(pressure)
 
-    def spreading_pressure(self, pressure: float):
-        """Interpolates spreading pressure at given pressure.
+    def reduced_potential(self, pressure: float):
+        """Interpolates reduced potential at given pressure.
 
         Args:
-            pressure(float): Pressure at which to calculate spreading pressure.
+            pressure(float): Pressure at which to calculate reduced potential.
 
         Returns:
-            float: Spreading pressure at given pressure.
+            float: reduced potential at given pressure.
 
         Raises:
             RuntimeError: if extrapolation is required.
@@ -178,7 +178,7 @@ class InterpolatorIsotherm:
         # Update error message to also say increase extrap_p
         if pressure > max_pressure:
             raise RuntimeError(dedent(f'''
-            To compute the spreading pressure at this bulk gas pressure, we would need
+            To compute the reduced potential at this bulk gas pressure, we would need
             to extrapolate the isotherm since this pressure is outside the range of the
             highest pressure in your pure-component isotherm data, {max_pressure}.
 
@@ -202,29 +202,29 @@ class InterpolatorIsotherm:
             Option 4: Go back to the lab or computer to collect isotherm data
                 at higher pressures. (Extrapolation can be dangerous!)
             '''))
-        return self.interp_spread(pressure)
+        return self.interp_rp(pressure)
 
-    def p0(self, target_phi: float):
-        """Interpolates p0 at given spreading pressure with Henry's law enforced.
+    def p0(self, psi: float):
+        """Interpolates p0 at given reduced potential with Henry's law enforced.
 
         Returns:
-            float: p0 at given spreading pressure
+            float: p0 at given reduced potential
 
         Raises:
             RuntimeError: if extrapolation is required.
         """
-        # Check if target_phi is beyond the data range
+        # Check if psi is beyond the data range
         if self.extrap_method is None:
             max_pressure = self.df[self.pressure_key].max()
         else:
             max_pressure = self.extrap_p
-        phi_at_max_p = self.spreading_pressure(max_pressure)
-        if target_phi > phi_at_max_p:
+        psi_at_max_p = self.reduced_potential(max_pressure)
+        if psi > psi_at_max_p:
             raise RuntimeError(dedent(f'''
-                To compute p0 at this spreading pressure {target_phi}, we would need to
-                extrapolate the isotherm since this spreading pressure is outside the
-                range of the maximum spreading pressure in your pure-component data
-                {phi_at_max_p}.
+                To compute p0 at this reduced potential {psi}, we would need to
+                extrapolate the isotherm since this reduced potential is outside the
+                range of the maximum reduced potential in your pure-component data
+                {psi_at_max_p}.
 
                 At present, your InterpolatorIsotherm object is set to throw an
                 exception when this occurs, as we do not have data outside this pressure
@@ -246,7 +246,7 @@ class InterpolatorIsotherm:
                 Option 4: Go back to the lab or computer to collect isotherm data
                     at higher pressures. (Extrapolation can be dangerous!)
                 '''))
-        return self.interp_p0(target_phi)
+        return self.interp_p0(psi)
 
 class CubicIsotherm:
     """Interpolates isotherm with monotonic cubic spline."""
@@ -258,7 +258,7 @@ class CubicIsotherm:
     loading_key: str
     pressure_key: str
     interp_load: PchipInterpolator
-    interp_spread: PchipInterpolator
+    interp_rp: PchipInterpolator
     interp_p0: PchipInterpolator
     henry_const: float
     first_pressure: float
@@ -273,8 +273,8 @@ class CubicIsotherm:
 
         This class uses the scipy.interpolate.PchipInterpolator, which is a monotonic
         cubic spline interpolation method. This ensures that the interpolated isotherm
-        is monotonic between the points in the original data. For speed, the spreading
-        pressure and p0 are calculated ahead of time on a grid and interpolated with
+        is monotonic between the points in the original data. For speed, the reduced
+        potential and p0 are calculated ahead of time on a grid and interpolated with
         Pchip as well. Extrapolation can be done with a linear fit to the last two
         points or with an analytical model fit to the data. Extrapolation can be
         dangerous but might be necessary for calculations at high bulk pressures.
@@ -293,8 +293,8 @@ class CubicIsotherm:
             df(pd.DataFrame): Dataframe containing isotherm data.
             loading_key(str): Column name in df corresponding to loading data.
             pressure_key(str): Column name in df corresponding to pressure data.
-            grid_points(int, optional): Number of points to use in the spreading
-                pressure and p0 interpolation grids. Default is 200, which provides a
+            grid_points(int, optional): Number of points to use in the reduced
+                potential and p0 interpolation grids. Default is 200, which provides a
                 smooth isotherm in most cases.
             force_monotonic(bool, optional): Forces the isotherm to be monotonically
                 increasing. This can help smooth out noisy data and prevent exceptions
@@ -366,34 +366,34 @@ class CubicIsotherm:
         self.henry_const = loadings[0] / pressures[0]
         self.interp_load = PchipInterpolator(pressures, loadings, extrapolate=False)
 
-        # Now calculate spreading pressure and p0 ahead of time for speed
+        # Now calculate reduced potential and p0 ahead of time for speed
         p_grid = np.logspace(np.log10(pressures[0]), np.log10(pressures[-1]),
                              grid_points)
         p_grid[-1] = pressures[-1] # ensure last point is exactly  max pressure in data
         loading_grid = np.array([self.loading(p) for p in p_grid])
         ln_p_grid = np.log(p_grid)
-        spreading_grid = cumulative_trapezoid(loading_grid, ln_p_grid, initial=0.0)
+        rp_grid = cumulative_trapezoid(loading_grid, ln_p_grid, initial=0.0)
 
         # Guard against small negative numerical artifacts
-        spreading_grid = np.maximum(spreading_grid, 0.0)
+        rp_grid = np.maximum(rp_grid, 0.0)
 
         # Drop repeated zeros to keep inverse interpolation monotonic
-        zero_indices = np.flatnonzero(spreading_grid == 0)
+        zero_indices = np.flatnonzero(rp_grid == 0)
         if zero_indices.size > 1:
-            keep_mask = np.ones_like(spreading_grid, dtype=bool)
+            keep_mask = np.ones_like(rp_grid, dtype=bool)
             keep_mask[zero_indices[1:]] = False
-            spreading_grid = spreading_grid[keep_mask]
+            rp_grid = rp_grid[keep_mask]
             p_grid = p_grid[keep_mask]
 
-        # Ensure strictly increasing spreading pressure for inverse interpolation
-        increasing_mask = np.r_[True, np.diff(spreading_grid) > 0]
-        spreading_grid = spreading_grid[increasing_mask]
+        # Ensure strictly increasing reduced potential for inverse interpolation
+        increasing_mask = np.r_[True, np.diff(rp_grid) > 0]
+        rp_grid = rp_grid[increasing_mask]
         p_grid = p_grid[increasing_mask]
 
-        # Build interpolators for spreading pressure and p0
-        self.interp_spread = PchipInterpolator(p_grid, spreading_grid,
+        # Build interpolators for reduced potential and p0
+        self.interp_rp = PchipInterpolator(p_grid, rp_grid,
                                                extrapolate=False)
-        self.interp_p0 = PchipInterpolator(spreading_grid, p_grid, extrapolate=False)
+        self.interp_p0 = PchipInterpolator(rp_grid, p_grid, extrapolate=False)
 
     def loading(self, pressure):
         """Interpolates loading at given pressure with Henry's law behavior enforced.
@@ -422,11 +422,11 @@ class CubicIsotherm:
 
         return loading
 
-    def spreading_pressure(self, pressure: float):
-        """Interpolates spreading pressure at given pressure with Henry's law enforced.
+    def reduced_potential(self, pressure: float):
+        """Interpolates reduced potential at given pressure with Henry's law enforced.
 
         Returns:
-            float: Spreading pressure at given pressure
+            float: reduced potential at given pressure
 
         Raises:
             RuntimeError: if extrapolation is required.
@@ -440,7 +440,7 @@ class CubicIsotherm:
 
         if pressure > max_pressure:
             raise RuntimeError(dedent(f'''
-            To compute the spreading pressure at this bulk gas pressure, we would need
+            To compute the reduced potential at this bulk gas pressure, we would need
             to extrapolate the isotherm since this pressure is outside the range of the
             highest pressure in your pure-component isotherm data, {max_pressure}.
 
@@ -472,34 +472,34 @@ class CubicIsotherm:
             return self.henry_const * pressure
 
         # Otherwise rely on the Pchip interpolation of the isotherm data
-        return self.henry_const * p0 + self.interp_spread(pressure)
+        return self.henry_const * p0 + self.interp_rp(pressure)
 
-    def p0(self, target_phi: float):
-        """Interpolates p0 at given spreading pressure with Henry's law enforced.
+    def p0(self, psi: float):
+        """Interpolates p0 at given reduced potential with Henry's law enforced.
 
         Returns:
-            float: p0 at given spreading pressure
+            float: p0 at given reduced potential
 
         Raises:
             RuntimeError: if extrapolation is required.
         """
         # Enforce Henry's law behavior at low pressures
-        phi_at_p0 = self.henry_const * self.first_pressure
-        if target_phi <= phi_at_p0:
-            return target_phi / self.henry_const
+        psi_at_p0 = self.henry_const * self.first_pressure
+        if psi <= psi_at_p0:
+            return psi / self.henry_const
 
-        # Check if target_phi is beyond the data range
+        # Check if psi is beyond the data range
         if self.extrap_method is None:
             max_pressure = self.df[self.pressure_key].max()
         else:
             max_pressure = self.extrap_p
-        phi_at_max_p = self.spreading_pressure(max_pressure)
-        if target_phi > phi_at_max_p:
+        psi_at_max_p = self.reduced_potential(max_pressure)
+        if psi > psi_at_max_p:
             raise RuntimeError(dedent(f'''
-            To compute p0 at this spreading pressure {target_phi}, we would need to
-            extrapolate the isotherm since this spreading pressure is outside the range
-            of the maximum spreading pressure in your pure-component isotherm data,
-            {phi_at_max_p}.
+            To compute p0 at this reduced potential {psi}, we would need to
+            extrapolate the isotherm since this reduced potential is outside the range
+            of the maximum reduced potential in your pure-component isotherm data,
+            {psi_at_max_p}.
 
             At present, your CubicIsotherm object is set to throw an exception when this
             occurs, as we do not have data outside this pressure range to characterize
@@ -523,7 +523,7 @@ class CubicIsotherm:
             '''))
 
         # Otherwise rely on the Pchip interpolation of the isotherm data
-        return self.interp_p0(target_phi)
+        return self.interp_p0(psi)
 
 def _build_extrapolated_df(df: pd.DataFrame, loading_key: str, pressure_key: str,
                           extrap_method: str, extrap_p: float, extrap_points: int,

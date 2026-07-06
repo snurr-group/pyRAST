@@ -29,26 +29,26 @@ class Henry(ModelIsotherm, model_name='Henry'):
         """
         return self.model_parameters['KH'] * pressure
 
-    def spreading_pressure(self, pressure):
-        r"""Returns spreading pressure as a function of pressure (or fugacity).
+    def reduced_potential(self, pressure):
+        r"""Returns reduced potential as a function of pressure (or fugacity).
 
-        Spreading pressure in the Henry model is given as:
+        Reduced potential in the Henry model is given as:
 
         .. math::
 
-            \phi(P) = K_HP
+            \Psi(P) = K_HP
 
         Args:
-            pressure(float or np.ndarray): pressure(s) at which to calculate spreading
-                pressure
+            pressure(float or np.ndarray): pressure(s) at which to calculate reduced
+                potential
 
         Returns:
-            float or np.ndarray: spreading pressure as same variable type as input
+            float or np.ndarray: reduced potential as same variable type as input
         """
         return self.model_parameters['KH'] * pressure
 
-    def p0(self, target_phi):
-        r"""Returns P0 as a function of spreading pressure.
+    def p0(self, psi):
+        r"""Returns P0 as a function of reduced potential.
 
         As the Henry model has an analytical form for P0, we can calculate it
         directly here. Activity coefficient fitting will be fastest using this model.
@@ -56,16 +56,16 @@ class Henry(ModelIsotherm, model_name='Henry'):
 
         .. math::
 
-            P^0(\phi) = \frac{\phi}{K_H}
+            P^0(\Psi) = \frac{\Psi}{K_H}
 
         Args:
-            target_phi (float or np.ndarray): Spreading pressure to calculate P0
+            psi (float or np.ndarray): Reduced potential to calculate P0
 
         Returns:
             float or np.ndarray: P0 as same variable type as input
         """
 
-        return target_phi / self.model_parameters['KH']
+        return psi / self.model_parameters['KH']
 
     def initial_guess(self):
         """Provides initial guess for model parameters.

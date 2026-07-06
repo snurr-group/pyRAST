@@ -33,21 +33,21 @@ class TemkinApprox(ModelIsotherm, model_name='TemkinApprox'):
                 (langmuir_frac_loading + self.model_parameters['theta'] * \
                  langmuir_frac_loading**2 * (langmuir_frac_loading - 1.0))
 
-    def spreading_pressure(self, pressure):
-        r"""Returns spreading pressure as a function of pressure (or fugacity).
+    def reduced_potential(self, pressure):
+        r"""Returns reduced potential as a function of pressure (or fugacity).
 
-        Spreading pressure in the Temkin Approximation model is given as:
+        Reduced potential in the Temkin Approximation model is given as:
 
         .. math::
 
-            \phi(P) = M\ln(1+KP) + M\theta\frac{2KP+1}{2(1+KP)^2}
+            \Psi(P) = M\ln(1+KP) + M\theta\frac{2KP+1}{2(1+KP)^2}
 
         Args:
-            pressure(float or np.ndarray): pressure(s) at which to calculate spreading
-                pressure
+            pressure(float or np.ndarray): pressure(s) at which to calculate reduced
+                potential
 
         Returns:
-            float or np.ndarray: spreading pressure as same variable type as input
+            float or np.ndarray: reduced potential as same variable type as input
         """
         one_plus_kp = 1.0 + self.model_parameters['K'] * pressure
         return self.model_parameters['M'] * \

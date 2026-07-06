@@ -30,39 +30,39 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
         return self.model_parameters['M'] * self.model_parameters['K'] * pressure / \
                 (1.0 + self.model_parameters['K'] * pressure)
 
-    def spreading_pressure(self, pressure):
-        r"""Returns spreading pressure as a function of pressure (or fugacity).
+    def reduced_potential(self, pressure):
+        r"""Returns reduced potential as a function of pressure (or fugacity).
 
-        Spreading pressure in the Langmuir model is given as:
+        Reduced potential in the Langmuir model is given as:
 
         .. math::
 
-            \phi(P) = M\ln(1+KP)
+            \Psi(P) = M\ln(1+KP)
 
         Args:
-            pressure(float or np.ndarray): pressure(s) at which to calculate spreading
-                pressure
+            pressure(float or np.ndarray): pressure(s) at which to calculate reduced
+                potential
 
         Returns:
-            float or np.ndarray: spreading pressure as same variable type as input
+            float or np.ndarray: reduced potential as same variable type as input
         """
         return (self.model_parameters['M'] *
                 np.log(1.0 + self.model_parameters['K'] * pressure))
 
-    def p0(self, target_phi: float):
-        r"""Returns P0 as a function of spreading pressure.
+    def p0(self, psi: float):
+        r"""Returns P0 as a function of reduced potential.
 
         As the Langmuir model has an analytical form for P0, we can calculate it
         directly here. Activity coefficient fitting will be fastest using this model.
-        There are additional safeguards to ensure numerical stability at high spreading
-        pressures. P0 in the Langmuir model is given as:
+        There are additional safeguards to ensure numerical stability at high reduced
+        potentials. P0 in the Langmuir model is given as:
 
         .. math::
 
-            P^0(\phi) = \frac{e^{\phi/M} - 1}{K}
+            P^0(\Psi) = \frac{e^{\Psi/M} - 1}{K}
 
         Args:
-            target_phi (float): Spreading pressure to calculate P0
+            psi (float): Reduced potential to calculate P0
 
         Returns:
             float: P0 value
@@ -72,7 +72,7 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
         if m <= 0 or k <= 0:
             return np.nan
 
-        x = target_phi / m
+        x = psi / m
 
         # Small x: use expm1 for precision
         if x < 50.0:

@@ -32,21 +32,21 @@ class Quadratic(ModelIsotherm, model_name='Quadratic'):
         pressure / (1.0 + self.model_parameters['Ka'] * pressure +
                      self.model_parameters['Kb'] * pressure**2)
 
-    def spreading_pressure(self, pressure: float):
-        r"""Returns spreading pressure as a function of pressure (or fugacity).
+    def reduced_potential(self, pressure: float):
+        r"""Returns reduced potential as a function of pressure (or fugacity).
 
-        Spreading pressure in the Quadratic model is given as:
+        Reduced potential in the Quadratic model is given as:
 
         .. math::
 
-            \phi(P) = M\ln(1+K_aP+K_bP^2)
+            \Psi(P) = M\ln(1+K_aP+K_bP^2)
 
         Args:
-            pressure(float or np.ndarray): pressure(s) at which to calculate spreading
-                pressure
+            pressure(float or np.ndarray): pressure(s) at which to calculate reduced
+                potential
 
         Returns:
-            float or np.ndarray: spreading pressure as same variable type as input
+            float or np.ndarray: reduced potential as same variable type as input
         """
         return self.model_parameters['M'] * \
                 np.log(1.0 + self.model_parameters['Ka'] * pressure +

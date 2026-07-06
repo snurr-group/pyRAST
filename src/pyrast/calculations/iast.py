@@ -67,11 +67,11 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
         exp_u = np.exp(u)
         return exp_u / np.sum(exp_u)
 
-    # Assert that the spreading pressures of each component are equal
-    def spreading_pressure_differences(u_free):
+    # Assert that the reduced potentials of each component are equal
+    def reduced_potential_differences(u_free):
         """IAST equations to solve for adsorbed mole fractions.
 
-        The residual is calculated as spreading pressure differences between each
+        The residual is calculated as reduced potential differences between each
         component in the mixture.
         """
         u_full = np.concatenate((u_free, [0.0]))
@@ -79,16 +79,16 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
 
         diff = np.zeros(n_components - 1)
         for i in range(n_components - 1):
-            sp1 = isotherms[i].spreading_pressure(partial_pressures[i] /
+            rp1 = isotherms[i].reduced_potential(partial_pressures[i] /
                                                   adsorbed_mole_fractions[i])
-            sp2 = isotherms[i + 1].spreading_pressure(partial_pressures[i + 1] /
+            rp2 = isotherms[i + 1].reduced_potential(partial_pressures[i + 1] /
                                                       adsorbed_mole_fractions[i + 1])
 
-            diff[i] = sp1 - sp2
+            diff[i] = rp1 - rp2
 
         return diff
 
-    # Solve for mole fractions in adsorbed phase by equating spreading pressures
+    # Solve for mole fractions in adsorbed phase by equating reduced potentials
     if adsorbed_mole_fraction_guess is None:
         # Default guess: pure-component loadings at these partial pressures
         loading_guess = [isotherms[i].loading(partial_pressures[i]) for i in \
@@ -106,7 +106,7 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
                      adsorbed_mole_fraction_guess[-1])
 
     solver_inputs = {
-        'fun': spreading_pressure_differences,
+        'fun': reduced_potential_differences,
         'x0': u_guess,
         'method': 'lm',
     }
@@ -154,10 +154,10 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
             print('\tp^0 = ', pressure0[i])
             print('\tLoading: ', loadings[i])
             print('\tx = ', adsorbed_mole_fractions[i])
-            print('\tSpreading pressure = ',
-                  isotherms[i].spreading_pressure(pressure0[i]))
+            print('\tReduced potential = ',
+                  isotherms[i].reduced_potential(pressure0[i]))
 
-    # print warning if had to extrapolate isotherm in spreading pressure
+    # print warning if had to extrapolate isotherm in reduced potential
     if not warningoff:
         for i in range(n_components):
             max_pressure = isotherms[i].df[isotherms[i].pressure_key].max()
@@ -237,11 +237,11 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
         exp_u = np.exp(u)
         return exp_u / np.sum(exp_u)
 
-    # Assert that the spreading pressures of each component are equal
-    def spreading_pressure_differences(u_free):
+    # Assert that the reduced potentials of each component are equal
+    def reduced_potential_differences(u_free):
         """IAST equations to solve for adsorbed mole fractions.
 
-        The residual is calculated as spreading pressure differences between each
+        The residual is calculated as reduced potential differences between each
         component in the mixture.
         """
         u_full = np.concatenate((u_free, [0.0]))
@@ -249,16 +249,16 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
 
         diff = np.zeros((n_components - 1, ))
         for i in range(n_components - 1):
-            sp1 = isotherms[i].spreading_pressure(total_pressure * \
+            rp1 = isotherms[i].reduced_potential(total_pressure * \
                             gas_mole_fractions[i] / adsorbed_mole_fractions[i])
 
-            sp2 = isotherms[i + 1].spreading_pressure(total_pressure * \
+            rp2 = isotherms[i + 1].reduced_potential(total_pressure * \
                             gas_mole_fractions[i+1] / adsorbed_mole_fractions[i + 1])
-            diff[i] = sp1 - sp2
+            diff[i] = rp1 - rp2
 
         return diff
 
-    # Solve for mole fractions in gas phase by equating spreading pressures
+    # Solve for mole fractions in gas phase by equating reduced potentials
     if gas_mole_fraction_guess is None:
         # Default guess: adsorbed mole fraction
         gas_mole_fraction_guess = adsorbed_mole_fractions
@@ -270,7 +270,7 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
     u_guess = np.log(gas_mole_fraction_guess[:-1] / gas_mole_fraction_guess[-1])
 
     solver_inputs = {
-        'fun': spreading_pressure_differences,
+        'fun': reduced_potential_differences,
         'x0': u_guess,
         'method': 'lm',
     }
@@ -317,12 +317,12 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
                 adsorbed_mole_fractions[i])
             print('\tBulk gas mole fraction that gives this, y = ', \
                 gas_mole_fractions[i])
-            print('\tSpreading pressure = ', \
-                isotherms[i].spreading_pressure(pressure0[i]))
+            print('\tReduced potential = ', \
+                isotherms[i].reduced_potential(pressure0[i]))
             print('\tp^0 = ', pressure0[i])
             print('\tLoading: ', loadings[i])
 
-    # print warning if had to extrapolate isotherm in spreading pressure
+    # print warning if had to extrapolate isotherm in reduced potential
     if not warningoff:
         for i in range(n_components):
             max_pressure = isotherms[i].df[isotherms[i].pressure_key].max()

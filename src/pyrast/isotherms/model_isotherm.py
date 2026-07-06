@@ -217,13 +217,13 @@ class ModelIsotherm:
         # If any other model tries to call the parent class function, raise exception
         raise NotImplementedError('loading method not implemented for this model.')
 
-    def spreading_pressure(self, pressure):
-        """Returns spreading pressure at given pressure if implemented by subclass."""
-        raise NotImplementedError('spreading_pressure method not implemented for this '
+    def reduced_potential(self, pressure):
+        """Returns reduced potential at given pressure if implemented by subclass."""
+        raise NotImplementedError('reduced_potential method not implemented for this '
                                   'model.')
 
-    def p0(self, target_phi):
-        """Returns p0 at given spreading pressure if not implemented by subclass.
+    def p0(self, psi):
+        """Returns p0 at given reduced potential if not implemented by subclass.
 
         This method works for any model without a closed form solution for p0 by using
         root finding. Root finding will be slower than a closed form solution.
@@ -231,9 +231,9 @@ class ModelIsotherm:
         p_lo = 1e-20
         p_hi = max(self.df[self.pressure_key])
 
-        while self.spreading_pressure(p_hi) < target_phi:
+        while self.reduced_potential(p_hi) < psi:
             p_hi *= 10
-        return brentq(lambda p: self.spreading_pressure(p) - target_phi, p_lo, p_hi)
+        return brentq(lambda p: self.reduced_potential(p) - psi, p_lo, p_hi)
 
     def pressure(self, loading):
         """Returns loading as a function of pressure (or fugacity).
@@ -281,7 +281,7 @@ class ModelIsotherm:
         return guess
 
     def _initialize_vst(self, vst_n, vst_p):
-        """Builds loading, spreading pressure, and p0 interpolators for VST isotherms.
+        """Builds loading, reduced potential, and p0 interpolators for VST isotherms.
 
         This method takes some of the logic from the CubicIsotherm class to build
         interpolators without error. Interpolators are needed to make VST models run
@@ -297,31 +297,31 @@ class ModelIsotherm:
         loadings = self.loading(p_grid)
         self.interp_load = PchipInterpolator(p_grid, loadings, extrapolate=False)
 
-        # Compute spreading pressure
+        # Compute reduced potential
         ln_p_grid = np.log(p_grid)
-        spreading_grid = cumulative_trapezoid(loadings, ln_p_grid, initial=0.0)
+        rp_grid = cumulative_trapezoid(loadings, ln_p_grid, initial=0.0)
 
         # Guard against small negative numerical artifacts
-        if np.any(spreading_grid < 0):
-            spreading_grid = np.maximum(spreading_grid, 0.0)
+        if np.any(rp_grid < 0):
+            rp_grid = np.maximum(rp_grid, 0.0)
 
         # Drop repeated zeros to keep inverse interpolation monotonic
-        zero_indices = np.flatnonzero(spreading_grid == 0)
+        zero_indices = np.flatnonzero(rp_grid == 0)
         if zero_indices.size > 1:
-            keep_mask = np.ones_like(spreading_grid, dtype=bool)
+            keep_mask = np.ones_like(rp_grid, dtype=bool)
             keep_mask[zero_indices[1:]] = False
-            spreading_grid = spreading_grid[keep_mask]
+            rp_grid = rp_grid[keep_mask]
             p_grid = p_grid[keep_mask]
 
-        # Ensure strictly increasing spreading pressure for inverse interpolation
-        increasing_mask = np.r_[True, np.diff(spreading_grid) > 0]
-        spreading_grid = spreading_grid[increasing_mask]
+        # Ensure strictly increasing reduced potential for inverse interpolation
+        increasing_mask = np.r_[True, np.diff(rp_grid) > 0]
+        rp_grid = rp_grid[increasing_mask]
         p_grid = p_grid[increasing_mask]
 
-        # Build interpolators for spreading pressure and p0
-        self.interp_spread = PchipInterpolator(p_grid, spreading_grid,
+        # Build interpolators for reduced potential and p0
+        self.interp_rp = PchipInterpolator(p_grid, rp_grid,
                                                extrapolate=False)
-        self.interp_p0 = PchipInterpolator(spreading_grid, p_grid,
+        self.interp_p0 = PchipInterpolator(rp_grid, p_grid,
                                            extrapolate=False)
 
     def _fit(self, optimization_options: dict | None = None):

@@ -78,7 +78,7 @@ class ActivityCoefficient:
         a local fit, where the model parameters are fit all at once by minimizing the
         residual between the observed and predicted activity coefficients for each
         data point. Each data point requires a root finding calculation to determine
-        the spreading pressure that gives the observed total loading. This approach can
+        the reduced potential that gives the observed total loading. This approach can
         be slower, but is useful if the global approach fails to converge. Models can
         be fit with a single data point if the C parameter is fixed, or with 2+ data
         points to fit all model parameters simultaneously.
@@ -238,26 +238,26 @@ class ActivityCoefficient:
                 guess[param] = bounds[1]
         return guess
 
-    def ln_gamma(self, x, phi):
+    def ln_gamma(self, x, psi):
         """Calculates natural log of activity coefficients.
 
         This method is implemented in every subclass for the specific model.
         """
         raise NotImplementedError('ln_gamma method must be implemented in subclass.')
 
-    def gamma(self, x, phi):
+    def gamma(self, x, psi):
         """Calculates activity coefficients (gamma) from ln_gamma.
 
         Args:
             x (array-like): Mole fractions of components in the adsorbed phase.
-            phi (float): Spreading pressure.
+            psi (float): Reduced potential for the mixture.
 
         Returns:
             np.ndarray: Activity coefficients for each component.
         """
-        return np.exp(self.ln_gamma(x, phi))
+        return np.exp(self.ln_gamma(x, psi))
 
-    def inverse_excess_loading(self, x, phi):
+    def inverse_excess_loading(self, x, psi):
         """Calculates inverse excess loading.
 
         This method is implemented in every subclass for the specific model.
@@ -363,7 +363,7 @@ class ActivityCoefficient:
         the difference between the predicted and observed ln(activity coefficients).
         It uses a least-squares approach to find the optimal parameters. At each step,
         the model parameters are updated and used in a 1D root-finding calculation to
-        find the spreading pressure that gives the observed total loading for each data
+        find the reduced potential that gives the observed total loading for each data
         point. All model parameters can be fit simultaneously using 2+ data points, or
         the C parameter can be fixed and the other parameters fit using a single data
         point.
@@ -376,14 +376,14 @@ class ActivityCoefficient:
                 scipy.optimize.least_squares, so you can specify any options available
                 there.
             root_options (dict): Options for the root-finding optimization when solving
-                for phi. This is passed directly to scipy.optimize.root, so you can
+                for psi. This is passed directly to scipy.optimize.root, so you can
                 specify any options available there.
         Returns:
             None: Model parameters are stored in self.model_parameters.
 
         Raises:
             RuntimeError: If the fit to component loadings fails to converge or if a
-                root cannot be found for the spreading pressure at any iteration.
+                root cannot be found for the reduced potential at any iteration.
         """
         # Reshape data if single point is provided
         single_point = False
@@ -397,16 +397,16 @@ class ActivityCoefficient:
         q_total = np.sum(self.loadings, axis=1)
         xs = self.loadings / q_total[:, None]
 
-        def solve_phi(x, q_total):
+        def solve_psi(x, q_total):
             p0 = np.zeros(len(self.isotherms))
 
-            # Calculate residual for determining phi by total loading at given phi
-            def equations(phi, x):
+            # Calculate residual for determining psi by total loading at given psi
+            def equations(psi, x):
                 for i in range(len(self.isotherms)):
-                    p0[i] = self.isotherms[i].p0(phi[0])
+                    p0[i] = self.isotherms[i].p0(psi[0])
                 q0 = np.array([self.isotherms[i].loading(p0[i])
                                 for i in range(len(self.isotherms))])
-                q_excess = self.inverse_excess_loading(x, phi)
+                q_excess = self.inverse_excess_loading(x, psi)
                 q_total_pred = 1.0 / (np.sum(x / q0) + q_excess)
                 return q_total_pred - q_total
 
@@ -419,10 +419,10 @@ class ActivityCoefficient:
             if root_options is not None:
                 root_inputs.update(root_options)
 
-            # Solve for phi
+            # Solve for psi
             res = root(**root_inputs)
             if not res.success:
-                raise RuntimeError(f'Root finding for phi failed: {res.message}. Try a '
+                raise RuntimeError(f'Root finding for psi failed: {res.message}. Try a '
                                    'different initial guess, modify the solver options,'
                                    'or check data quality.')
             return cast('float', res.x[0])
@@ -436,11 +436,11 @@ class ActivityCoefficient:
             # Calculate residual of predicted vs observed ln(gamma)
             res = np.zeros(points * 2)
             for i in range(points):
-                phi = solve_phi(xs[i], q_total[i])
-                p0 = np.asarray([iso.p0(phi) for iso in self.isotherms])
+                psi = solve_psi(xs[i], q_total[i])
+                p0 = np.asarray([iso.p0(psi) for iso in self.isotherms])
 
                 ln_gamma_exp = np.log(self.partial_fug[i] / (p0 * xs[i]))
-                ln_gamma_pred = self.ln_gamma(xs[i], phi)
+                ln_gamma_pred = self.ln_gamma(xs[i], psi)
                 res[2*i:2*i+2] = ln_gamma_pred - ln_gamma_exp
             return res
 
@@ -500,7 +500,7 @@ class ActivityCoefficient:
                 scipy.optimize.least_squares, so you can specify any options available
                 there.
             rast_options (dict): Options for the RAST calculation when solving
-                for phi. This is passed directly to the rast method, so you can specify
+                for psi. This is passed directly to the rast method, so you can specify
                 any options available there.
         Returns:
             None: Model parameters are stored in self.model_parameters.

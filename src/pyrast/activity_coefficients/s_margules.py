@@ -13,7 +13,7 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
 
     The excess Gibbs free energy in the Symmetric Margules model is given by:
 
-    .. math:: \frac{g^E}{RT} = A x_1 x_2 (1 - e^{-C \phi})
+    .. math:: \frac{g^E}{RT} = A x_1 x_2 (1 - e^{-C \Psi})
 
     Sources: Siperstein, F. R. & Myers, A. L. Mixed-gas adsorption. AIChE Journal 47,
     1141-1159 (2001).
@@ -28,40 +28,40 @@ class SMargules(ActivityCoefficient, model_name='sMargules'):
     param_default_bounds = ((-np.inf, np.inf), (0.0, np.inf))
     param_ideal_values = (0.0,)
 
-    def ln_gamma(self, x, phi):
+    def ln_gamma(self, x, psi):
         r"""Calculates the natural log of the activity coefficients for each component.
 
         In the Symmetric Margules model, the activity coefficients are calculated as:
 
         .. math::
-            \ln \gamma_i = A x_j^2 (1 - e^{-C \phi})
+            \ln \gamma_i = A x_j^2 (1 - e^{-C \Psi})
 
         Args:
             x (array-like): Mole fractions of the components in the mixture.
-            phi (float): Spreading pressure for the mixture.
+            psi (float): Reduced potential for the mixture.
 
         Returns:
             np.ndarray: Natural log of the activity coefficients for each component.
         """
         ln_gamma0 = self.model_parameters['A'] * \
-                    (1.0 - np.exp(-self.model_parameters['C'] * phi)) * (x[1] ** 2)
+                    (1.0 - np.exp(-self.model_parameters['C'] * psi)) * (x[1] ** 2)
         ln_gamma1 = self.model_parameters['A'] * \
-                    (1.0 - np.exp(-self.model_parameters['C'] * phi)) * (x[0] ** 2)
+                    (1.0 - np.exp(-self.model_parameters['C'] * psi)) * (x[0] ** 2)
         return np.array([ln_gamma0, ln_gamma1])
 
-    def inverse_excess_loading(self, x, phi):
-        r"""Calculates the inverse of the excess loading given composition and phi.
+    def inverse_excess_loading(self, x, psi):
+        r"""Calculates the inverse of the excess loading given composition and psi.
 
         The excess loading in the Symmetric Margules model is calculated as:
 
-        .. math:: \left(\frac{1}{q}\right)^E = A C x_1 x_2 e^{-C \phi}
+        .. math:: \left(\frac{1}{q}\right)^E = A C x_1 x_2 e^{-C \Psi}
 
         Args:
             x (array-like): Mole fractions of the components in the mixture.
-            phi (float): Spreading pressure for the mixture.
+            psi (float): Reduced potential for the mixture.
 
         Returns:
             float: Inverse of the excess loading for the mixture.
         """
         return self.model_parameters['A'] * self.model_parameters['C'] * x[0] * x[1] * \
-               np.exp(-self.model_parameters['C'] * phi)
+               np.exp(-self.model_parameters['C'] * psi)
