@@ -69,7 +69,6 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
             df_pressures = df_pressures[mask]
             df_loadings = df_loadings[mask]
 
-        ax.scatter(df_pressures, df_loadings)
         if withfit:
             if pressures is not None:
                 pressure_range = pressures
@@ -81,7 +80,8 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
             loading_range = np.zeros(len(pressure_range))
             for i, p in enumerate(pressure_range):
                 loading_range[i] = isotherm.loading(p)
-            ax.plot(pressure_range, loading_range, label = isotherm.name)
+            ax.plot(pressure_range, loading_range, label = isotherm.name, markersize=0)
+        ax.scatter(df_pressures, df_loadings)
 
     if fugacity:
         ax.set_xlabel('Fugacity')
@@ -154,7 +154,7 @@ def plot_reduced_potential(isotherms, *, xlogscale = False, ylogscale = False,
         psi_range = np.zeros(len(pressure_range))
         for i, p in enumerate(pressure_range):
             psi_range[i] = isotherm.reduced_potential(p)
-        ax.plot(pressure_range, psi_range, label = isotherm.name)
+        ax.plot(pressure_range, psi_range, label = isotherm.name, markersize=0)
 
     if fugacity:
         ax.set_xlabel('Fugacity')
@@ -228,7 +228,7 @@ def plot_p0(isotherms, *, xlogscale = False, ylogscale = False, pressures = None
         p0_range = np.zeros(len(pressure_range))
         for i, psi in enumerate(psi_range):
             p0_range[i] = isotherm.pressure(psi) #type: ignore
-        ax.plot(psi_range, p0_range, label = isotherm.name)
+        ax.plot(psi_range, p0_range, label = isotherm.name, markersize=0)
 
     ax.set_xlabel('Reduced Potential')
     ax.set_ylabel('P0')

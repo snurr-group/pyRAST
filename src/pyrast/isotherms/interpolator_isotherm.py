@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.integrate import cumulative_trapezoid
 from scipy.interpolate import PchipInterpolator, interp1d
+from scipy.optimize import isotonic_regression
 
 from pyrast.isotherms.model_isotherm import ModelIsotherm
 
@@ -109,15 +110,15 @@ class InterpolatorIsotherm:
         pressures = df[pressure_key].to_numpy()
         loadings = df[loading_key].to_numpy()
 
+        self.henry_const = loadings[1] / pressures[1]  # Henry's law behavior enforced
+
         # Ensure the isotherm is monotonic increasing if force_monotonic=True
-        if force_monotonic:
-            mask = loadings >= np.maximum.accumulate(loadings)
-            pressures = pressures[mask]
-            loadings = loadings[mask]
+        if force_monotonic and np.any(np.diff(loadings) < 0):
+            result = isotonic_regression(loadings)
+            loadings = np.asarray(result.x)
 
         # Save information for loading interpolation
         self.interp_load = interp1d(pressures, loadings)
-        self.henry_const = loadings[1] / pressures[1]  # Henry's law behavior enforced
 
         # Now calculate reduced potential and p0 ahead of time for speed
         p_grid = np.geomspace(pressures[1], pressures[-1], grid_points)
@@ -349,17 +350,18 @@ class CubicIsotherm:
                                  f' Choose from "linear" or '
                                  f'{list(ModelIsotherm._MODELS.keys())}.')
 
-        # Remove zero values for interpolation
-        pressures = df[self.pressure_key].values[
-                    df[self.pressure_key].values != 0.0]
-        loadings = df[self.loading_key].values[
-                    df[self.pressure_key].values != 0.0]
+        # Drop negative or zero loadings as this is not physically meaningful and can
+        # break the interpolators
+        pressures = df[self.pressure_key].to_numpy()
+        loadings = df[self.loading_key].to_numpy()
+        mask = loadings >= 0
+        pressures = pressures[mask]
+        loadings = loadings[mask]
 
         # Ensure the isotherm is monotonic increasing if force_monotonic=True
-        if force_monotonic:
-            mask = loadings >= np.maximum.accumulate(loadings)
-            pressures = pressures[mask]
-            loadings = loadings[mask]
+        if force_monotonic and np.any(np.diff(loadings) < 0):
+            result = isotonic_regression(loadings)
+            loadings = np.asarray(result.x)
 
         # Save information for loading interpolation
         self.first_pressure = pressures[0]
@@ -386,13 +388,12 @@ class CubicIsotherm:
             p_grid = p_grid[keep_mask]
 
         # Ensure strictly increasing reduced potential for inverse interpolation
-        increasing_mask = np.r_[True, np.diff(rp_grid) > 0]
+        increasing_mask = np.concatenate(([True], np.diff(rp_grid) > 0))
         rp_grid = rp_grid[increasing_mask]
         p_grid = p_grid[increasing_mask]
 
         # Build interpolators for reduced potential and p0
-        self.interp_rp = PchipInterpolator(p_grid, rp_grid,
-                                               extrapolate=False)
+        self.interp_rp = PchipInterpolator(p_grid, rp_grid, extrapolate=False)
         self.interp_p0 = PchipInterpolator(rp_grid, p_grid, extrapolate=False)
 
     def loading(self, pressure):
@@ -531,10 +532,10 @@ def _build_extrapolated_df(df: pd.DataFrame, loading_key: str, pressure_key: str
     """Extrapolates isotherm data in df according to extrap_method."""
     if extrap_method == 'linear':
         # Use last two points to extrapolate linearly
-        final_load = df[loading_key].values[-1]
-        final_pressure = df[pressure_key].values[-1]
-        second_to_last_load = df[loading_key].values[-2]
-        second_to_last_pressure = df[pressure_key].values[-2]
+        final_load = df[loading_key].to_numpy()[-1]
+        final_pressure = df[pressure_key].to_numpy()[-1]
+        second_to_last_load = df[loading_key].to_numpy()[-2]
+        second_to_last_pressure = df[pressure_key].to_numpy()[-2]
         slope = ((final_load - second_to_last_load) /
                     (final_pressure - second_to_last_pressure))
         next_point = final_load + slope * (extrap_p - final_pressure)

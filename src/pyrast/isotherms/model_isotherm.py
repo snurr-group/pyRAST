@@ -85,7 +85,10 @@ class ModelIsotherm:
                 bounds are not sufficient for fitting.
             optimization_options(dict, optional): Dictionary of options to pass to
                 scipy.optimize.least_squares. Only needed if the default optimization
-                options are not sufficient for fitting.
+                options are not sufficient for fitting. Also, select the residual
+                function if needed by passing 'residual' as a key in the dictionary.
+                The residual function can be selected from 'default', 'log', or
+                'relative'.
             vst_n (int, optional): Number of points to interpolate between. A high
                 number of points will use more memory but more accurately represent the
                 isotherm. Default is 300 points.
@@ -253,7 +256,7 @@ class ModelIsotherm:
         pressure = self.df[self.pressure_key].to_numpy()
 
         # Remove any rows with negative loading or pressure <= 0
-        mask = (loading >= 0) & (pressure > 0)
+        mask = (loading > 0) & (pressure > 0)
         loading = loading[mask]
         pressure = pressure[mask]
 
@@ -274,7 +277,7 @@ class ModelIsotherm:
         """
         for param, value in guess.items():
             bounds = self.param_bounds[param]
-            if value < bounds[0]:
+            if value <= bounds[0]:
                 guess[param] = bounds[0]
             elif value > bounds[1]:
                 guess[param] = bounds[1]
@@ -337,7 +340,7 @@ class ModelIsotherm:
         pressure = self.df[self.pressure_key].to_numpy()
 
         # Remove any rows with negative loading or pressure <= 0
-        mask = (loading >= 0) & (pressure > 0)
+        mask = (loading > 0) & (pressure > 0)
         loading = loading[mask]
         pressure = pressure[mask]
 
@@ -345,11 +348,18 @@ class ModelIsotherm:
         guess = np.array(list(self.param_guess.values()))
         bounds = [[self.param_bounds[param][0] for param in self.param_names],
                   [self.param_bounds[param][1] for param in self.param_names]]
+        residual = 'default'
         def residuals_loading(x):
             for i in range(len(self.param_names)):
                 self.model_parameters[self.param_names[i]] = x[i]
-
-            return loading - self.loading(pressure)
+            if residual.lower() == 'default':
+                return loading - self.loading(pressure)
+            if residual.lower() == 'log':
+                return np.log10(loading) - np.log10(self.loading(pressure))
+            if residual.lower() == 'relative':
+                return (loading - self.loading(pressure)) / np.maximum(loading, 1e-12)
+            raise ValueError('Invalid residual chosen. Choose from "default", '
+                             '"log", or "relative".')
 
         # Build dictionary of inputs to curve fitting
         fitting_inputs = {
@@ -360,6 +370,7 @@ class ModelIsotherm:
 
         # Update if user provided optimization options
         if optimization_options is not None:
+            residual = optimization_options.pop('residual', 'default')
             fitting_inputs.update(optimization_options)
 
         # Perform fitting
