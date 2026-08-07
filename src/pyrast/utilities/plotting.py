@@ -60,10 +60,10 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
         ax.set_ylim(ylim)
 
     for num, isotherm in enumerate(isotherms):
-        df_pressures = isotherm.df[isotherm.pressure_key].values[
-                    isotherm.df[isotherm.pressure_key].values != 0.0]
-        df_loadings = isotherm.df[isotherm.loading_key].values[
-                   isotherm.df[isotherm.pressure_key].values != 0.0]
+        df_pressures = isotherm.df[isotherm.pressure_key].to_numpy()[
+                    isotherm.df[isotherm.pressure_key].to_numpy() != 0.0]
+        df_loadings = isotherm.df[isotherm.loading_key].to_numpy()[
+                   isotherm.df[isotherm.pressure_key].to_numpy() != 0.0]
         if pressures is not None:
             mask = (df_pressures >= pressures.min()) & (df_pressures <= pressures.max())
             df_pressures = df_pressures[mask]
@@ -77,9 +77,7 @@ def plot_isotherm(isotherms, *, withfit = True, xlogscale = False, ylogscale = F
                                             np.log10(df_pressures.max()),
                                             100)
                 pressure_range = np.floor(pressure_range)
-            loading_range = np.zeros(len(pressure_range))
-            for i, p in enumerate(pressure_range):
-                loading_range[i] = isotherm.loading(p)
+            loading_range = isotherm.loading(pressure_range)
             ax.plot(pressure_range, loading_range, label = isotherm.name, markersize=0)
         ax.scatter(df_pressures, df_loadings)
 
@@ -140,8 +138,8 @@ def plot_reduced_potential(isotherms, *, xlogscale = False, ylogscale = False,
         ax.set_ylim(ylim)
 
     for num, isotherm in enumerate(isotherms):
-        df_pressures = isotherm.df[isotherm.pressure_key].values[
-                    isotherm.df[isotherm.pressure_key].values != 0.0]
+        df_pressures = isotherm.df[isotherm.pressure_key].to_numpy()[
+                    isotherm.df[isotherm.pressure_key].to_numpy() != 0.0]
         if pressures is not None:
             mask = (df_pressures >= pressures.min()) & (df_pressures <= pressures.max())
             df_pressures = df_pressures[mask]
@@ -151,9 +149,7 @@ def plot_reduced_potential(isotherms, *, xlogscale = False, ylogscale = False,
                                         np.log10(df_pressures.max()),
                                         100)
             pressure_range = np.floor(pressure_range)
-        psi_range = np.zeros(len(pressure_range))
-        for i, p in enumerate(pressure_range):
-            psi_range[i] = isotherm.reduced_potential(p)
+        psi_range = isotherm.reduced_potential(pressure_range)
         ax.plot(pressure_range, psi_range, label = isotherm.name, markersize=0)
 
     if fugacity:
@@ -209,8 +205,8 @@ def plot_p0(isotherms, *, xlogscale = False, ylogscale = False, pressures = None
         ax.set_ylim(ylim)
 
     for num, isotherm in enumerate(isotherms):
-        df_pressures = isotherm.df[isotherm.pressure_key].values[
-                    isotherm.df[isotherm.pressure_key].values != 0.0]
+        df_pressures = isotherm.df[isotherm.pressure_key].to_numpy()[
+                    isotherm.df[isotherm.pressure_key].to_numpy() != 0.0]
 
         if pressures is not None:
             mask = (df_pressures >= pressures.min()) & (df_pressures <= pressures.max())
@@ -222,12 +218,8 @@ def plot_p0(isotherms, *, xlogscale = False, ylogscale = False, pressures = None
                                         np.log10(df_pressures.max()),
                                         100)
             pressure_range = np.floor(pressure_range)
-        psi_range = np.zeros(len(pressure_range))
-        for i, p in enumerate(pressure_range):
-            psi_range[i] = isotherm.reduced_potential(p)
-        p0_range = np.zeros(len(pressure_range))
-        for i, psi in enumerate(psi_range):
-            p0_range[i] = isotherm.pressure(psi) #type: ignore
+        psi_range = isotherm.reduced_potential(pressure_range)
+        p0_range = isotherm.p0(psi_range)
         ax.plot(psi_range, p0_range, label = isotherm.name, markersize=0)
 
     ax.set_xlabel('Reduced Potential')

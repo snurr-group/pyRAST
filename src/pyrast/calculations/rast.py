@@ -9,7 +9,7 @@ from pyrast.activity_coefficients import ActivityCoefficient
 
 
 def rast(partial_fugacities, isotherms, activity_coefficient: ActivityCoefficient, *,
-         verbose: bool = False, warningoff: bool = False,
+         verbose: bool = False, warningoff: bool = False, return_psi: bool = False,
          adsorbed_mole_fraction_guess = None, psi_guess: float = 1.0,
          solver_options: dict | None = None):
     """Performs forward RAST calculation to predict mixture adsorption.
@@ -36,6 +36,8 @@ def rast(partial_fugacities, isotherms, activity_coefficient: ActivityCoefficien
             calculation.
         warningoff (bool, optional): If True, suppresses warnings about extrapolation
             of isotherm data.
+        return_psi (bool, optional): If True, returns the reduced potential as the last
+            element of the returned loadings array. Default is False.
         adsorbed_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
             adsorbed phase mole fractions. Length must match number of components. If
             not provided, defaults to pure-component loadings at the given partial
@@ -194,12 +196,15 @@ def rast(partial_fugacities, isotherms, activity_coefficient: ActivityCoefficien
                 to extrapolate the isotherm data to achieve this RAST result.'''))
 
     # return loadings [component 1, component 2, ...]. same units as in data
+    if return_psi:
+        return np.concatenate((loadings, [psi]))
     return loadings
 
 def reverse_rast(adsorbed_mole_fractions, total_fugacity, isotherms,
                  activity_coefficient: ActivityCoefficient, *, verbose: bool = False,
-                 warningoff: bool = False, gas_mole_fraction_guess = None,
-                 psi_guess: float = 1.0, solver_options: dict | None = None):
+                 return_psi: bool = False, warningoff: bool = False,
+                 gas_mole_fraction_guess = None, psi_guess: float = 1.0,
+                 solver_options: dict | None = None):
     """Performs reverse RAST calculation to predict gas phase of adsorbed solution.
 
     The RAST calculation is performed by solving for the gas phase mole fractions and
@@ -225,6 +230,8 @@ def reverse_rast(adsorbed_mole_fractions, total_fugacity, isotherms,
             calculation.
         warningoff (bool, optional): If True, suppresses warnings about extrapolation
             of isotherm data.
+        return_psi (bool, optional): If True, returns the reduced potential as the last
+            element of the returned loadings array. Default is False.
         gas_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
             gas phase mole fractions. Length must match number of components. If
             not provided, defaults to the adsorbed mole fractions.
@@ -384,5 +391,7 @@ def reverse_rast(adsorbed_mole_fractions, total_fugacity, isotherms,
                 to extrapolate the isotherm data to achieve this RAST result.'''))
 
     # return mole fractions in gas phase, component loadings
+    if return_psi:
+        return gas_mole_fractions, np.concatenate((loadings, [psi]))
     return gas_mole_fractions, loadings
 

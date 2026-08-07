@@ -153,23 +153,33 @@ class InterpolatorIsotherm:
         self.interp_p0 = interp1d(rp_grid, p_grid)
 
     def loading(self, pressure):
-        """Loading at given pressure with interp1d."""
+        """Loading at given pressure with interp1d.
+
+        Args:
+            pressure (float, np.ndarray): Pressure at which to calculate loading.
+
+        Returns:
+            float or np.ndarray: Loading at given pressure.
+        """
 
         # Henry's law behavior is enforced as interpolator is linear
         return self.interp_load(pressure)
 
-    def reduced_potential(self, pressure: float):
+    def reduced_potential(self, pressure):
         """Interpolates reduced potential at given pressure.
 
         Args:
-            pressure(float): Pressure at which to calculate reduced potential.
+            pressure(float, np.ndarray): Pressure at which to calculate reduced
+                potential.
 
         Returns:
-            float: reduced potential at given pressure.
+            float or np.ndarray: Reduced potential at given pressure.
 
         Raises:
-            RuntimeError: if extrapolation is required.
+            RuntimeError: If extrapolation is required.
         """
+        is_scalar = np.isscalar(pressure)
+        pressure_arr = np.atleast_1d(np.asarray(pressure, dtype=float))
         # Set max pressure to maximum pressure in df or extrapolation end
         if self.extrap_method is None:
             max_pressure = self.df[self.pressure_key].max()
@@ -177,7 +187,7 @@ class InterpolatorIsotherm:
             max_pressure = self.extrap_p
 
         # Update error message to also say increase extrap_p
-        if pressure > max_pressure:
+        if np.any(pressure_arr > max_pressure):
             raise RuntimeError(dedent(f'''
             To compute the reduced potential at this bulk gas pressure, we would need
             to extrapolate the isotherm since this pressure is outside the range of the
@@ -203,26 +213,34 @@ class InterpolatorIsotherm:
             Option 4: Go back to the lab or computer to collect isotherm data
                 at higher pressures. (Extrapolation can be dangerous!)
             '''))
-        return self.interp_rp(pressure)
+        if is_scalar:
+            return float(self.interp_rp(pressure_arr)[0])
+        return self.interp_rp(pressure_arr)
 
-    def p0(self, psi: float):
+    def p0(self, psi):
         """Interpolates p0 at given reduced potential with Henry's law enforced.
 
+        Args:
+            psi (float or np.ndarray): Reduced potential at which to calculate p0.
+
         Returns:
-            float: p0 at given reduced potential
+            float or np.ndarray: p0 at given reduced potential
 
         Raises:
             RuntimeError: if extrapolation is required.
         """
+        is_scalar = np.isscalar(psi)
+        psi_arr = np.atleast_1d(np.asarray(psi, dtype=float))
         # Check if psi is beyond the data range
         if self.extrap_method is None:
             max_pressure = self.df[self.pressure_key].max()
         else:
             max_pressure = self.extrap_p
         psi_at_max_p = self.reduced_potential(max_pressure)
-        if psi > psi_at_max_p:
+        if np.any(psi_arr > psi_at_max_p):
+            too_high = psi_arr[psi_arr > psi_at_max_p]
             raise RuntimeError(dedent(f'''
-                To compute p0 at this reduced potential {psi}, we would need to
+                To compute p0 at this reduced potential {too_high}, we would need to
                 extrapolate the isotherm since this reduced potential is outside the
                 range of the maximum reduced potential in your pure-component data
                 {psi_at_max_p}.
@@ -247,6 +265,8 @@ class InterpolatorIsotherm:
                 Option 4: Go back to the lab or computer to collect isotherm data
                     at higher pressures. (Extrapolation can be dangerous!)
                 '''))
+        if is_scalar:
+            return float(self.interp_p0(psi_arr)[0])
         return self.interp_p0(psi)
 
 class CubicIsotherm:
@@ -404,6 +424,9 @@ class CubicIsotherm:
 
         Args:
             pressure(float, np.ndarray): Pressure at which to interpolate loading.
+
+        Returns:
+            float or np.ndarray: Loading at given pressure.
         """
 
         scalar_input = np.isscalar(pressure)
@@ -423,23 +446,28 @@ class CubicIsotherm:
 
         return loading
 
-    def reduced_potential(self, pressure: float):
+    def reduced_potential(self, pressure):
         """Interpolates reduced potential at given pressure with Henry's law enforced.
 
+        Args:
+            pressure(float, np.ndarray): Pressure at which to interpolate reduced
+                potential.
+
         Returns:
-            float: reduced potential at given pressure
+            float or np.ndarray: reduced potential at given pressure
 
         Raises:
             RuntimeError: if extrapolation is required.
         """
-
+        is_scalar = np.isscalar(pressure)
+        pressure_arr = np.atleast_1d(np.asarray(pressure, dtype=float))
         # Max is either the max pressure in original data or extrap_p
         if self.extrap_method is None:
             max_pressure = self.df[self.pressure_key].max()
         else:
             max_pressure = self.extrap_p
 
-        if pressure > max_pressure:
+        if np.any(pressure_arr > max_pressure):
             raise RuntimeError(dedent(f'''
             To compute the reduced potential at this bulk gas pressure, we would need
             to extrapolate the isotherm since this pressure is outside the range of the
@@ -468,26 +496,36 @@ class CubicIsotherm:
 
         p0 = self.first_pressure
 
+        result = np.empty_like(pressure_arr)
         # Henry's law behavior enforced
-        if pressure <= p0:
-            return self.henry_const * pressure
+        henry_mask = pressure_arr <= p0
+        result[henry_mask] = self.henry_const * pressure_arr[henry_mask]
 
         # Otherwise rely on the Pchip interpolation of the isotherm data
-        return self.henry_const * p0 + self.interp_rp(pressure)
+        interp_mask = ~henry_mask
+        result[interp_mask] = self.henry_const * p0 + \
+                              self.interp_rp(pressure_arr[interp_mask])
+        return float(result[0]) if is_scalar else result
 
-    def p0(self, psi: float):
+    def p0(self, psi):
         """Interpolates p0 at given reduced potential with Henry's law enforced.
 
+        Args:
+            psi (float, np.ndarray): Reduced potential at which to interpolate p0.
+
         Returns:
-            float: p0 at given reduced potential
+            float or np.ndarray: p0 at given reduced potential
 
         Raises:
             RuntimeError: if extrapolation is required.
         """
+        is_scalar = np.isscalar(psi)
+        psi = np.atleast_1d(np.asarray(psi, dtype=float))
+        result = np.empty_like(psi)
         # Enforce Henry's law behavior at low pressures
         psi_at_p0 = self.henry_const * self.first_pressure
-        if psi <= psi_at_p0:
-            return psi / self.henry_const
+        henry_mask = psi <= psi_at_p0
+        result[henry_mask] = psi[henry_mask] / self.henry_const
 
         # Check if psi is beyond the data range
         if self.extrap_method is None:
@@ -495,9 +533,10 @@ class CubicIsotherm:
         else:
             max_pressure = self.extrap_p
         psi_at_max_p = self.reduced_potential(max_pressure)
-        if psi > psi_at_max_p:
+        if np.any(psi > psi_at_max_p):
+            too_high = psi[psi > psi_at_max_p]
             raise RuntimeError(dedent(f'''
-            To compute p0 at this reduced potential {psi}, we would need to
+            To compute p0 at this reduced potential {too_high}, we would need to
             extrapolate the isotherm since this reduced potential is outside the range
             of the maximum reduced potential in your pure-component isotherm data,
             {psi_at_max_p}.
@@ -524,7 +563,11 @@ class CubicIsotherm:
             '''))
 
         # Otherwise rely on the Pchip interpolation of the isotherm data
-        return self.interp_p0(psi)
+        if np.any(~henry_mask):
+            result[~henry_mask] = self.interp_p0(psi[~henry_mask])
+        if is_scalar:
+            return float(result[0])
+        return result
 
 def _build_extrapolated_df(df: pd.DataFrame, loading_key: str, pressure_key: str,
                           extrap_method: str, extrap_p: float, extrap_points: int,

@@ -231,12 +231,22 @@ class ModelIsotherm:
         This method works for any model without a closed form solution for p0 by using
         root finding. Root finding will be slower than a closed form solution.
         """
-        p_lo = 1e-20
-        p_hi = max(self.df[self.pressure_key])
+        is_scalar = np.isscalar(psi)
+        psi_arr = np.atleast_1d(np.asarray(psi, dtype=float))
+        p0_vals = np.full(psi_arr.shape, np.nan, dtype=float)
 
-        while self.reduced_potential(p_hi) < psi:
-            p_hi *= 10
-        return brentq(lambda p: self.reduced_potential(p) - psi, p_lo, p_hi)
+        for i, psi_val in enumerate(psi_arr):
+            p_lo = 1e-20
+            p_hi = max(self.df[self.pressure_key])
+
+            while self.reduced_potential(p_hi) < psi_val:
+                p_hi *= 10
+            p0_vals[i] = brentq(lambda p: self.reduced_potential(p) - psi_val, p_lo,
+                                p_hi, maxiter=1000)
+
+        if is_scalar:
+            return float(p0_vals[0])
+        return p0_vals
 
     def pressure(self, loading):
         """Returns loading as a function of pressure (or fugacity).

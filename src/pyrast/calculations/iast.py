@@ -6,8 +6,8 @@ import scipy.optimize
 
 
 def iast(partial_pressures, isotherms, *, verbose: bool = False,
-         warningoff: bool = False, adsorbed_mole_fraction_guess = None,
-         solver_options: dict | None = None):
+         warningoff: bool = False, return_psi: bool = False,
+         adsorbed_mole_fraction_guess = None, solver_options: dict | None = None):
     """Performs forward IAST calculation to predict mixture adsorption.
 
     The IAST calculation is performed by solving for the adsorbed phase mole fractions
@@ -26,6 +26,8 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
             calculation.
         warningoff (bool, optional): If True, suppresses warnings about extrapolation
             of isotherm data.
+        return_psi (bool, optional): If True, returns the reduced potential as the last
+            element of the returned loadings array. Default is False.
         adsorbed_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
             adsorbed phase mole fractions. Length must match number of components. If
             not provided, defaults to pure-component loadings at the given partial
@@ -169,11 +171,15 @@ def iast(partial_pressures, isotherms, *, verbose: bool = False,
                 to extrapolate the isotherm data to achieve this IAST result.'''))
 
     # return loadings [component 1, component 2, ...]. same units as in data
+    if return_psi:
+        return np.concatenate((loadings,
+                               [isotherms[0].reduced_potential(pressure0[0])]))
     return loadings
 
 def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
                  verbose: bool = False, warningoff: bool = False,
-                 gas_mole_fraction_guess = None, solver_options: dict | None = None):
+                 return_psi: bool = False, gas_mole_fraction_guess = None,
+                 solver_options: dict | None = None):
     """Performs reverse IAST calculation to predict gas phase of adsorbed solution.
 
     The IAST calculation is performed by solving for the gas phase mole fractions
@@ -192,6 +198,8 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
             calculation.
         warningoff (bool, optional): If True, suppresses warnings about extrapolation
             of isotherm data.
+        return_psi (bool, optional): If True, returns the reduced potential as the last
+            element of the returned loadings array. Default is False.
         gas_mole_fraction_guess (list or np.ndarray, optional): Initial guess for
             gas phase mole fractions. Length must match number of components. If
             not provided, defaults to the adsorbed mole fractions.
@@ -334,4 +342,8 @@ def reverse_iast(adsorbed_mole_fractions, total_pressure, isotherms, *,
                 to extrapolate the isotherm data to achieve this IAST result.'''))
 
     # return mole fractions in gas phase, component loadings
+    if return_psi:
+        return (gas_mole_fractions,
+                np.concatenate((loadings,
+                                [isotherms[0].reduced_potential(pressure0[0])])))
     return gas_mole_fractions, loadings

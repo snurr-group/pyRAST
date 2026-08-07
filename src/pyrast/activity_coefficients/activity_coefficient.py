@@ -172,6 +172,15 @@ class ActivityCoefficient:
             raise ValueError('Exactly 2 isotherm objects must be provided in a list, '
                              'one for each component.')
 
+        # Remove data points where loading is zero for any component
+        if not total_loading:
+            mask = np.all(loadings > 0, axis=1)
+            loadings = loadings[mask]
+            partial_fug = partial_fug[mask]
+        else:
+            mask = loadings > 0
+            loadings = loadings[mask]
+            partial_fug = partial_fug[mask]
 
         # Store data
         self.partial_fug = partial_fug
@@ -539,9 +548,10 @@ class ActivityCoefficient:
                 try:
                     q_pred = rast(partial_fug[i], self.isotherms, self, **rast_inputs)
                 except RuntimeError as e:
-                    raise RuntimeError(f'RAST calculation failed during global fitting '
-                                       f'to component loadings. The error message was: '
-                                       f'{e}')
+                    print(f'RAST calculation failed during global fitting '
+                          f'to component loadings. The error message was: {e}.'
+                          'Predicted loadings will be set to [1e6, 1e6]')
+                    q_pred = np.array([1e6, 1e6])
                 res[2*i:2*i+2] = (q_pred - self.loadings[i]) \
                                  / np.maximum(self.loadings[i], 1e-8)
             return res

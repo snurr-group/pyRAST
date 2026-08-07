@@ -49,7 +49,7 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
         return (self.model_parameters['M'] *
                 np.log(1.0 + self.model_parameters['K'] * pressure))
 
-    def p0(self, psi: float):
+    def p0(self, psi):
         r"""Returns P0 as a function of reduced potential.
 
         As the Langmuir model has an analytical form for P0, we can calculate it
@@ -62,28 +62,43 @@ class Langmuir(ModelIsotherm, model_name='Langmuir'):
             P^0(\Psi) = \frac{e^{\Psi/M} - 1}{K}
 
         Args:
-            psi (float): Reduced potential to calculate P0
+            psi (float or np.ndarray): Reduced potential to calculate P0
 
         Returns:
-            float: P0 value
+            float or np.ndarray: P0 value
         """
         m = self.model_parameters['M']
         k = self.model_parameters['K']
-        if m <= 0 or k <= 0:
-            return np.nan
 
-        x = psi / m
+        psi_arr = np.asarray(psi, dtype=float)
+        x = psi_arr / m
+
+        result = np.empty_like(x)
+
+        small_mask = x < 50.0
+        large_mask = ~small_mask
 
         # Small x: use expm1 for precision
-        if x < 50.0:
-            return np.expm1(x) / k
+        result[small_mask] = np.expm1(x[small_mask]) / k
 
         # Large x: use log-space to avoid overflow
-        log_p = x - np.log(k)
-        log_max = np.log(np.finfo(float).max)
-        if log_p >= log_max:
-            return np.finfo(float).max
-        return np.exp(log_p)
+        if np.any(large_mask):
+            log_p = x[large_mask] - np.log(k)
+            log_max = np.log(np.finfo(float).max)
+
+            overflow_mask = log_p >= log_max
+            ok_mask = ~overflow_mask
+
+            large_result = np.empty_like(log_p)
+            large_result[overflow_mask] = np.finfo(float).max
+            large_result[ok_mask] = np.exp(log_p[ok_mask])
+
+            result[large_mask] = large_result
+
+        # return scalar if input was scalar
+        if np.ndim(psi) == 0:
+            return result.item()
+        return result
 
     def initial_guess(self):
         """Provides initial guess for model parameters."""
